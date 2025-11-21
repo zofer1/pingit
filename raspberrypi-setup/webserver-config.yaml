@@ -1,0 +1,30 @@
+# PingIT WebServer Configuration File
+# This file should be placed at /etc/pingit/webserver-config.yaml
+
+# Logging configuration
+logging:
+  level: INFO                           # DEBUG for verbose, INFO for production
+  path: /mnt/usb/log/pingit            # Log file directory (USB drive)
+  max_size_mb: 10                       # Max size per log file (10 MB default)
+  backup_count: 10                      # Number of backup files to keep
+  retention_days: 7                     # Delete files older than this many days
+
+# WebServer configuration
+webserver:
+  host: 127.0.0.1                       # Hostname/IP for client connections (127.0.0.1 for same machine)
+  port: 7030                            # Web server port (HTTP port)
+  scheme: https                         # Protocol scheme: http or https
+  https_port: 7443                      # HTTPS port (typically 443 or 7443)
+  listen_host: 0.0.0.0                  # Address to listen on (0.0.0.0 = all interfaces)
+
+# SSL/TLS configuration for HTTPS
+ssl:
+  enabled: true                         # Enable SSL/TLS
+  certificate: /etc/pingit/ssl/cert.pem     # Path to SSL certificate
+  private_key: /etc/pingit/ssl/key.pem      # Path to private key
+  ca_certificate: /etc/pingit/ssl/ca.pem    # Path to CA certificate for self-signed certs
+
+# Database configuration (SQLite)
+database:
+  path: /mnt/usb/data/pingit/pingit.db  # SQLite database file path (USB drive)
+

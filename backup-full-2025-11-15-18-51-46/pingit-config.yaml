@@ -1,0 +1,36 @@
+# PingIT Configuration File
+# This file should be placed at /etc/pingit/config.yaml
+
+# Logging configuration
+logging:
+  level: INFO
+  path: /var/log/pingit
+
+# Global ping configuration
+ping:
+  interval: 1  # Ping interval in seconds (applies to all targets)
+
+# Reporting configuration
+reporting:
+  interval: 10  # Report statistics every 10 ping iterations
+
+# Ping targets configuration
+targets:
+  - name: Amdocs Isarel VPN
+    host: isr-fullvpn.amdocs.com
+    timeout: 0.5          # 5 second timeout
+  
+  - name: Device at home
+    host: 10.10.0.44
+    timeout: 0.5
+
+  - name: Home gateway
+    host: 10.10.0.138
+    timeout: 0.5
+
+  - name: Google DNS
+    host: 8.8.8.8
+    timeout: 0.5
+
+
+

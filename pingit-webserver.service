@@ -1,0 +1,24 @@
+[Unit]
+Description=PingIT WebServer - API Service
+After=network-online.target pingit.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run as root to allow writing to log/data directories and manage database
+User=root
+Group=root
+WorkingDirectory=/opt/pingit
+ExecStart=/usr/bin/python3 /opt/pingit/webserver.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pingit-webserver
+
+# Give time for startup
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target

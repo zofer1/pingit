@@ -1,0 +1,30 @@
+[Unit]
+Description=PingIT WebServer - API Service
+After=network-online.target pingit.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pingit
+Group=pingit
+WorkingDirectory=/opt/pingit
+ExecStart=/usr/bin/python3 /opt/pingit/webserver.py --config /etc/pingit/webserver.yaml --port 5000 --db /var/lib/pingit/pingit.db
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pingit-webserver
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/pingit /var/lib/pingit
+
+# Give time for startup
+StartLimitInterval=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
