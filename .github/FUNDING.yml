@@ -1,0 +1,6 @@
+# GitHub Funding Configuration
+# This file enables donation links on your GitHub repository
+
+paypal: zgofer@gmail.com
+custom: ['https://paypal.me/zgofer@gmail.com'] 
+
