@@ -1,5 +1,4 @@
 PyYAML>=6.0
-APScheduler>=3.10.0
 icmplib>=3.0.0
 ecs-logging>=2.0.0
 Flask>=2.0.0
