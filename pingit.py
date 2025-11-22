@@ -249,7 +249,12 @@ class PingService:
         
         # Load webserver config path from pingit config
         webserver_config_path = config.get('webserver_config')
-        if webserver_config_path and not self.test_mode:
+        
+        # In test mode, use local webserver-config.yaml
+        if self.test_mode and not webserver_config_path:
+            webserver_config_path = "./webserver-config.yaml"
+        
+        if webserver_config_path:
             try:
                 if Path(webserver_config_path).exists():
                     with open(webserver_config_path, 'r') as f:
