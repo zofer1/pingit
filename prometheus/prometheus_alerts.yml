@@ -1,0 +1,113 @@
+# Prometheus Alert Rules for PingIT
+# These rules generate alerts when network connectivity issues are detected
+
+groups:
+
+  # Performance alerts
+  - name: pingit_performance
+    interval: 30s
+    rules:
+
+      # Alert when ping time is high
+      - alert: PingITHighPingTime
+        expr: pingit_ping_time_ms{job="pingit"} > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: pingit
+        annotations:
+          summary: "High ping time for {{ $labels.target_name }}"
+          description: |
+            Ping time is {{ $value | humanize }}ms (threshold: 100ms).
+            Target: {{ $labels.host }}
+          dashboard_url: "http://localhost:3000/d/pingit"
+
+      # Alert when ping time is critical
+      - alert: PingITCriticalPingTime
+        expr: pingit_ping_time_ms{job="pingit"} > 500
+        for: 3m
+        labels:
+          severity: critical
+          service: pingit
+        annotations:
+          summary: "CRITICAL - Very high ping time for {{ $labels.target_name }}"
+          description: "Ping time is {{ $value | humanize }}ms (critical threshold: 500ms)"
+
+      # Alert on ping time spike
+      - alert: PingITResponseTimeSpike
+        expr: rate(pingit_ping_time_ms{job="pingit"}[1m]) > 50
+        for: 3m
+        labels:
+          severity: warning
+          service: pingit
+        annotations:
+          summary: "Response time spike for {{ $labels.target_name }}"
+          description: "Response time increased by {{ $value | humanize }}ms in the last minute"
+
+
+  # Disconnect event alerts
+  - name: pingit_disconnects
+    interval: 30s
+    rules:
+
+      # Alert on frequent disconnect events
+      - alert: PingITFrequentDisconnects
+        expr: rate(pingit_disconnect_events_total{job="pingit"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          service: pingit
+        annotations:
+          summary: "Frequent disconnects detected for {{ $labels.target_name }}"
+          description: |
+            Disconnect rate: {{ $value | humanize }} events/sec
+            This indicates unstable connectivity to {{ $labels.host }}
+
+      # Alert on many disconnect events in a period
+      - alert: PingITManyDisconnects
+        expr: increase(pingit_disconnect_events_total{job="pingit"}[1h]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: pingit
+        annotations:
+          summary: "Many disconnect events for {{ $labels.target_name }} in the last hour"
+          description: "{{ $value | humanize }} disconnect events in the last 60 minutes"
+
+
+  # System/Monitoring alerts
+  - name: pingit_monitoring
+    interval: 30s
+    rules:
+
+      # Alert when PingIT webserver is down (health check)
+      - alert: PingITWebServerDown
+        expr: up{job="pingit"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: pingit
+        annotations:
+          summary: "PingIT WebServer is DOWN"
+          description: "The PingIT webserver at {{ $labels.instance }} is not responding to scrape requests."
+
+# Recording rules for pre-computed metrics (optional)
+# These pre-compute common queries for better performance
+groups:
+  - name: pingit_recording
+    interval: 30s
+    rules:
+
+      # Pre-compute average ping time over 1 hour
+      - record: pingit:ping_time_avg_1h
+        expr: avg_over_time(pingit_ping_time_ms[1h])
+
+      # Pre-compute max ping time over 1 hour
+      - record: pingit:ping_time_max_1h
+        expr: max_over_time(pingit_ping_time_ms[1h])
+
+      # Pre-compute disconnect rate (events per minute)
+      - record: pingit:disconnect_rate_per_min
+        expr: rate(pingit_disconnect_events_total[1m])
+
+
