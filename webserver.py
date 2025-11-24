@@ -856,8 +856,9 @@ def admin_get_log_location():
     if not admin_manager:
         return jsonify({'error': 'Admin not initialized'}), 500
     
+    # Query parameter 'service' is accepted but both services use same path for now
     location = admin_manager.get_log_location()
-    return jsonify({'location': location}), 200
+    return jsonify({'path': location}), 200
 
 
 @app.route('/api/admin/logs/location', methods=['PUT'])
@@ -881,6 +882,22 @@ def admin_set_log_location():
     else:
         logger.warning(f"Admin: {message}")
         return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/logs/tail', methods=['GET'])
+def admin_get_log_tail():
+    """Get last N lines from log file."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    service = request.args.get('service', 'pingit')
+    lines = int(request.args.get('lines', 20))
+    success, content = admin_manager.get_log_tail(service, lines=lines)
+    
+    if success:
+        return jsonify({'content': content}), 200
+    else:
+        return jsonify({'error': content}), 400
 
 
 @app.route('/api/admin/ssl/enable', methods=['PUT'])

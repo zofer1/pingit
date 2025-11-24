@@ -147,6 +147,58 @@ class AdminManager:
         """Get current log location."""
         return self.config.get('logging', {}).get('path', '/var/log/pingit')
     
+    def get_log_tail(self, service: str, lines: int = 20) -> Tuple[bool, str]:
+        """Get last N lines from log file."""
+        try:
+            log_path = None
+            
+            # In test mode, look for local log files
+            if self.is_test_mode:
+                # Search for the log file for this specific service
+                log_dirs = ['./logs', '.', './log', '../logs']
+                service_specific_files = []
+                all_log_files = []
+                
+                for log_dir in log_dirs:
+                    if not os.path.exists(log_dir):
+                        continue
+                    
+                    try:
+                        for filename in os.listdir(log_dir):
+                            if filename.endswith('.log'):
+                                full_path = os.path.join(log_dir, filename)
+                                if os.path.isfile(full_path):
+                                    all_log_files.append(full_path)
+                                    # Check if filename contains the service name
+                                    if service in filename.lower():
+                                        service_specific_files.append(full_path)
+                    except Exception:
+                        pass
+                
+                # Prioritize service-specific files (e.g., pingit.log for pingit service)
+                if service_specific_files:
+                    log_path = max(service_specific_files, key=lambda f: os.path.getmtime(f))
+                elif all_log_files:
+                    # If no service-specific file found, use the most recently modified log file
+                    log_path = max(all_log_files, key=lambda f: os.path.getmtime(f))
+            else:
+                # In production mode, use the configured log location
+                log_path = self.get_log_location()
+            
+            if not log_path or not os.path.exists(log_path):
+                return False, f"Log file not found for service '{service}'"
+            
+            with open(log_path, 'r', errors='ignore') as f:
+                all_lines = f.readlines()
+            
+            # Get the last N lines
+            tail_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            content = ''.join(tail_lines)
+            
+            return True, content
+        except Exception as e:
+            return False, f"Error reading log file: {str(e)}"
+    
     # SERVICE CONTROL
     def start_service(self, service: str) -> Tuple[bool, str]:
         """Start a service using systemctl (Linux) or subprocess (Windows/test mode)."""
