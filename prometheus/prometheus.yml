@@ -1,0 +1,85 @@
+# Prometheus Configuration for PingIT Monitoring
+# See: https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+
+global:
+  # Default interval between metric scrapes
+  scrape_interval: 15s
+
+  # Default timeout for scrape requests
+  scrape_timeout: 10s
+
+  # How often to evaluate alert rules
+  evaluation_interval: 30s
+
+  # Attach labels to all time series
+  external_labels:
+    monitor: 'pingit-monitor'
+    environment: 'production'
+
+# Load rules for alerts
+rule_files:
+  - 'prometheus_alerts.yml'
+
+# AlertManager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+# Scrape configurations
+scrape_configs:
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s
+
+  # PingIT Metrics
+  - job_name: 'pingit'
+    # Change localhost to your server IP/hostname
+    static_configs:
+      - targets: ['localhost:7030']
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    # Add labels for easier filtering
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+    metric_relabel_configs:
+      # Keep only PingIT metrics (optional - comment out to keep all)
+      - source_labels: [__name__]
+        regex: 'pingit_.*'
+        action: keep
+
+  # Node Exporter (if running with docker-compose)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+# Remote storage configuration (optional)
+# Uncomment to send metrics to remote storage (e.g., VictoriaMetrics)
+# remote_write:
+#   - url: "http://localhost:8428/api/v1/write"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 200
+#       min_shards: 1
+#       max_samples_per_send: 1000
+#       batch_send_wait: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+
+# Service discovery configuration (optional)
+# Uncomment to use service discovery (e.g., Consul, Kubernetes, EC2)
+# consul_sd_configs:
+#   - server: 'localhost:8500'
+#     datacenter: 'dc1'
+
+# Logging configuration
+logging:
+  level: 'info'  # debug, info, warn, error
+
+

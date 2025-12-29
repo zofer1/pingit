@@ -59,6 +59,7 @@ sudo journalctl -u pingit-webserver -f
 - **🔐 Root Required**: Runs as root for ICMP socket creation (ping capability)
 - **💻 Cross-Platform Testing**: Development mode supports Windows, macOS, and Linux
 - **🔗 REST API**: Programmatic access to monitoring data via JSON API
+- **📡 Prometheus Metrics**: Native Prometheus endpoint for Grafana, alerting, and time-series analysis
 
 ## 📋 Requirements
 
@@ -496,6 +497,69 @@ Returns current statistics and dashboard data in JSON format. This can be used f
 - Data export
 - Monitoring automation
 
+### Prometheus Metrics Endpoint
+
+PingIT exposes a **Prometheus-compatible metrics endpoint** for integration with Prometheus, Grafana, and other observability platforms. Metrics are held **in-memory** for performance, collected from live ping data, and cleared after each Prometheus scrape.
+
+**Access Metrics:**
+```
+GET http://localhost:7030/metrics
+```
+
+**Available Metrics:**
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `pingit_ping_time_ms` | Gauge | `target_name`, `host` | Average ping response time in milliseconds |
+| `pingit_disconnect_events_total` | Counter | `target_name`, `host` | Total disconnect events since last scrape |
+
+**Key Features:**
+- ✅ **In-Memory Storage** - No database queries, fast scraping
+- ✅ **Auto-Clearing** - Metrics cleared after each Prometheus scrape (drain pattern)
+- ✅ **Thread-Safe** - Safe concurrent access from multiple threads
+- ✅ **Lightweight** - ~100 KB base + per-target overhead
+- ✅ **Real-Time** - Fresh data from live ping collection
+
+**Example Prometheus Configuration:**
+
+Add to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'pingit'
+    static_configs:
+      - targets: ['localhost:7030']
+    scrape_interval: 15s      # Scrape every 15 seconds
+    metrics_path: '/metrics'   # Prometheus metrics endpoint
+```
+
+**Example Prometheus Queries:**
+
+```promql
+# Current ping time for all targets
+pingit_ping_time_ms
+
+# Ping time for specific target
+pingit_ping_time_ms{target_name="google_dns"}
+
+# Disconnect rate (events per minute)
+rate(pingit_disconnect_events_total[1m])
+
+# Total disconnects by target
+pingit_disconnect_events_total
+
+# Combine with other metrics
+pingit_ping_time_ms * 2  # Highlight slow targets
+```
+
+**Benefits:**
+
+- ✅ **Real-time Monitoring** - Scrape metrics every 15+ seconds
+- ✅ **Grafana Integration** - Build custom dashboards
+- ✅ **Alerting** - Set up alerts based on connectivity metrics
+- ✅ **Time-series Data** - Historical trend analysis
+- ✅ **Multi-target Support** - Monitor all targets in one place
+
 
 ## 🎯 Use Cases
 
@@ -750,6 +814,7 @@ All dependencies are listed in `requirements.txt` and automatically installed du
 - **Flask** (2.0+) - Web framework for dashboard and API
 - **ecs-logging** (2.0.0+) - ECS structured logging
 - **requests** (2.28.0+) - HTTP client for service communication
+- **prometheus-client** (0.16.0+) - Prometheus metrics exposition library
 
 **Frontend Dependencies (Dashboard):**
 
@@ -832,7 +897,7 @@ Typical resource usage (production with 4 targets):
 
 ### Dashboard Integration
 
-Access real-time data from PingIT:
+Access real-time data from PingIT through multiple interfaces:
 
 1. **Web Dashboard** (built-in):
    - Access at `http://localhost:7030`
@@ -844,6 +909,29 @@ Access real-time data from PingIT:
    - Endpoint: `http://localhost:7030/api/data`
    - Returns JSON formatted statistics
    - Can be used for custom dashboards or scripts
+
+3. **Prometheus Metrics** (for observability platforms):
+   - Endpoint: `http://localhost:7030/metrics`
+   - Prometheus-compatible text format
+   - Integration with Grafana for custom dashboards
+   - Alert rules for automated notifications
+   - Time-series data storage in Prometheus/VictoriaMetrics
+
+### Grafana Integration Example
+
+Create a Grafana dashboard to visualize PingIT metrics:
+
+1. **Add Prometheus Data Source** in Grafana pointing to your Prometheus instance
+2. **Create Panels** using these queries:
+   - Success Rate: `pingit_ping_success_rate{target_name=~".*"}`
+   - Response Time: `pingit_response_time_avg_ms{target_name=~".*"}`
+   - Target Status: `pingit_target_status{target_name=~".*"}`
+   - Disconnect Events: `rate(pingit_disconnect_events_total[5m])`
+
+3. **Set Alerts** based on metrics:
+   - Alert when target is down: `pingit_target_status == 0`
+   - Alert on slow response: `pingit_response_time_avg_ms > 100`
+   - Alert on low success: `pingit_ping_success_rate < 95`
 
 ## 📝 Version History
 

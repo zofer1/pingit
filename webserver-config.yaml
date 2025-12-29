@@ -28,3 +28,9 @@ ssl:
 database:
   path: /mnt/usb/data/pingit/pingit.db  # SQLite database file path (USB drive)
 
+# Prometheus metrics configuration
+metrics:
+  prometheus_mode: false               # Enable Prometheus mode (drain cache after scrape to avoid accumulation)
+                                       # When true: metrics are cleared after each Prometheus scrape
+                                       # When false: metrics accumulate in memory cache
+                                       # Metrics endpoint /metrics is always available

@@ -1,0 +1,175 @@
+# AlertManager Configuration for PingIT
+# Handles routing, deduplication, and delivery of alerts
+
+global:
+  # Default SMTP settings (optional)
+  # smtp_smarthost: 'smtp.example.com:587'
+  # smtp_auth_username: 'alerts@example.com'
+  # smtp_auth_password: 'password'
+  # smtp_from: 'alerts@example.com'
+  
+  # Template files
+  templates:
+    - '/etc/alertmanager/templates/*.tmpl'
+
+# The root route with all parameters, which are inherited by the child routes if they are not overwritten.
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+
+  # Child routes
+  routes:
+    # Critical alerts
+    - match:
+        severity: critical
+      receiver: 'critical'
+      group_wait: 5s
+      group_interval: 5s
+      repeat_interval: 1h
+
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'warnings'
+      group_wait: 30s
+      group_interval: 30s
+      repeat_interval: 4h
+
+# Receivers - Where alerts are sent
+receivers:
+
+  # Default receiver (all alerts)
+  - name: 'default'
+    # webhook_configs:
+    #   - url: 'http://example.com/api/alerts'
+    #     send_resolved: true
+
+  # Critical alerts (sent to multiple channels)
+  - name: 'critical'
+    # Email notifications
+    email_configs:
+      - to: 'ops-critical@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'password'
+        headers:
+          Subject: '[CRITICAL] PingIT Alert: {{ .GroupLabels.alertname }}'
+        html: |
+          {{ define "email.default.html" }}
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .alert { margin: 10px 0; padding: 10px; border: 1px solid #ddd; }
+              .critical { background-color: #ffcccc; }
+              .warning { background-color: #ffffcc; }
+            </style>
+          </head>
+          <body>
+            <h2>{{ .GroupLabels.alertname }}</h2>
+            {{ range .Alerts }}
+              <div class="alert {{ .Labels.severity }}">
+                <strong>{{ .Labels.instance }}:</strong> {{ .Annotations.description }}
+              </div>
+            {{ end }}
+          </body>
+          </html>
+          {{ end }}
+    
+    # Slack notifications (optional)
+    # Uncomment and set your webhook URL
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+    #     channel: '#alerts-critical'
+    #     title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+    #     color: 'danger'
+
+    # PagerDuty notifications (optional)
+    # Uncomment and set your integration key
+    # pagerduty_configs:
+    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+    #     description: '{{ .GroupLabels.alertname }}'
+    #     details:
+    #       firing: '{{ template "pagerduty.default.instances" .Alerts.Firing }}'
+
+  # Warning alerts
+  - name: 'warnings'
+    email_configs:
+      - to: 'ops-warnings@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'password'
+        headers:
+          Subject: '[WARNING] PingIT Alert: {{ .GroupLabels.alertname }}'
+
+# Inhibition rules - Suppress certain alerts when others are firing
+inhibit_rules:
+
+  # Don't send low success rate alert if target is already down
+  - source_match:
+      alertname: 'PingITTargetDown'
+    target_match:
+      alertname: 'PingITLowSuccessRate'
+    equal: ['target_name', 'instance']
+
+  # Don't send response time alert if target is down
+  - source_match:
+      alertname: 'PingITTargetDown'
+    target_match:
+      alertname: 'PingITHighResponseTime'
+    equal: ['target_name', 'instance']
+
+  # Don't send warning-level alerts if critical alert exists for same target
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['target_name']
+
+  # Don't send individual target down alerts if multiple targets down alert is firing
+  - source_match:
+      alertname: 'PingITMultipleTargetsDown'
+    target_match:
+      alertname: 'PingITTargetDown'
+    equal: ['job']
+
+  # Don't send complete outage alert if we're in maintenance
+  - source_match:
+      alertname: 'Maintenance'
+    target_match:
+      severity: 'critical'
+
+# Mute timings (optional) - Suppress alerts during certain times
+# mute_time_intervals:
+#   - name: 'maintenance-window'
+#     time_intervals:
+#       - times:
+#           - start_time: '00:00'
+#             end_time: '02:00'
+#         weekdays: ['sunday']
+#
+#   - name: 'weekends'
+#     time_intervals:
+#       - times:
+#           - start_time: '00:00'
+#             end_time: '23:59'
+#         weekdays: ['saturday', 'sunday']
+
+# Active time intervals (optional) - Only send alerts during certain times
+# active_time_intervals:
+#   - name: 'business-hours'
+#     time_intervals:
+#       - times:
+#           - start_time: '09:00'
+#             end_time: '17:00'
+#         weekdays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+
+

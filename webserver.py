@@ -13,6 +13,7 @@ import ssl
 import os
 import time
 import glob
+import copy
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -134,12 +135,84 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 
+# In-memory metrics storage
+class MetricsCache:
+    """Thread-safe in-memory metrics cache for Prometheus scraping."""
+    
+    def __init__(self):
+        self.lock = threading.Lock()
+        # Format: {target_name: {'host': host, 'ping_times': [times...], 'disconnect_count': N}}
+        self.metrics = {}
+    
+    def update_ping_time(self, target_name: str, host: str, response_time: float):
+        """Record a ping response time in milliseconds."""
+        with self.lock:
+            if target_name not in self.metrics:
+                self.metrics[target_name] = {
+                    'host': host,
+                    'ping_times': [],
+                    'disconnect_count': 0,
+                    'status': 1
+                }
+            self.metrics[target_name]['ping_times'].append(response_time)
+            self.metrics[target_name]['host'] = host
+            self.metrics[target_name]['status'] = 1  # Mark as up
+    
+    def update_status(self, target_name: str, host: str, status: int):
+        """Update target status (1=up, 0=down)."""
+        with self.lock:
+            if target_name not in self.metrics:
+                self.metrics[target_name] = {
+                    'host': host,
+                    'ping_times': [],
+                    'disconnect_count': 0,
+                    'status': status
+                }
+            else:
+                self.metrics[target_name]['status'] = status
+    
+    def increment_disconnect(self, target_name: str, host: str):
+        """Increment disconnect counter for a target."""
+        with self.lock:
+            if target_name not in self.metrics:
+                self.metrics[target_name] = {
+                    'host': host,
+                    'ping_times': [],
+                    'disconnect_count': 1,
+                    'status': 0
+                }
+            else:
+                self.metrics[target_name]['disconnect_count'] += 1
+                self.metrics[target_name]['status'] = 0  # Mark as down
+    
+    def get_and_clear(self):
+        """Get all metrics and clear the cache."""
+        with self.lock:
+            result = copy.deepcopy(self.metrics)
+            self.metrics = {}
+            return result
+    
+    def get_copy(self):
+        """Get a copy of metrics without clearing."""
+        with self.lock:
+            return copy.deepcopy(self.metrics)
+    
+    def clear(self):
+        """Clear all metrics."""
+        with self.lock:
+            self.metrics = {}
+
+
+# Initialize metrics cache
+metrics_cache = MetricsCache()
+
 # Global variables
 sqlite_db_path: Optional[str] = None
 sqlite_conn: Optional[sqlite3.Connection] = None
 sqlite_lock = threading.Lock()  # Synchronization lock for SQLite operations
 config = None
 logger = None
+prometheus_mode: bool = False  # If True, cache is cleared after each metrics scrape (drain pattern)
 
 
 def setup_logging(log_path: str = DEFAULT_LOG_PATH, level: str = "INFO", 
@@ -540,6 +613,97 @@ def health():
     return jsonify({'status': 'healthy', 'database': 'sqlite'}), 200
 
 
+@app.route('/metrics')
+def metrics():
+    """
+    Prometheus metrics endpoint.
+    Exposes metrics with:
+    - pingit_ping_time_ms (gauge): Response time in milliseconds from memory cache
+    - pingit_disconnect_events_total (counter): Disconnect events from database by time period (1m, 1h, 24h)
+    """
+    try:
+        # Get current metrics from cache
+        # If prometheus_mode is True, clear cache after reading (drain pattern)
+        # Otherwise keep cache for manual inspection
+        if prometheus_mode:
+            current_metrics = metrics_cache.get_and_clear()
+        else:
+            current_metrics = metrics_cache.get_copy()
+        
+        # Build Prometheus text format
+        lines = []
+        
+        # Add help and type metadata
+        lines.append("# HELP pingit_ping_time_ms Ping response time in milliseconds")
+        lines.append("# TYPE pingit_ping_time_ms gauge")
+        
+        lines.append("# HELP pingit_disconnect_events_total Total disconnect events for target by time period")
+        lines.append("# TYPE pingit_disconnect_events_total counter")
+        
+        # Query disconnect events from database by time period
+        disconnect_by_period = {}
+        time_periods = {
+            '1m': 720,   # last 30 days (month) = 720 hours
+            '1h': 1,     # last 1 hour
+            '24h': 24    # last 24 hours
+        }
+        
+        with sqlite_lock:
+            cursor = sqlite_conn.cursor()
+            
+            for period_label, hours in time_periods.items():
+                cursor.execute('''
+                    SELECT target_name, host, COUNT(*) as disconnect_count
+                    FROM disconnect_times
+                    WHERE datetime(disconnect_time) > datetime('now', '-' || ? || ' hours', 'localtime')
+                    GROUP BY target_name, host
+                ''', (hours,))
+                
+                rows = cursor.fetchall()
+                for row in rows:
+                    target_name = row['target_name']
+                    host = row['host']
+                    disconnect_count = row['disconnect_count']
+                    
+                    key = (target_name, host, period_label)
+                    disconnect_by_period[key] = disconnect_count
+        
+        # Add ping time metrics for each target from cache
+        for target_name, data in current_metrics.items():
+            host = data['host']
+            ping_times = data['ping_times']
+            
+            # Gauge: ping time (milliseconds) - report average of collected times
+            if ping_times:
+                avg_ping_time = sum(ping_times) / len(ping_times)
+                lines.append(
+                    f'pingit_ping_time_ms{{target_name="{target_name}",host="{host}"}} {avg_ping_time}'
+                )
+        
+        # Add disconnect counters from database by time period (for all targets with disconnects)
+        for (target_name, host, period), disconnect_count in disconnect_by_period.items():
+            lines.append(
+                f'pingit_disconnect_events_total{{target_name="{target_name}",host="{host}",period="{period}"}} {disconnect_count}'
+            )
+        
+        # Add timestamp
+        lines.append(f"# Generated at {datetime.now().isoformat()}")
+        lines.append("")
+        
+        metrics_text = "\n".join(lines)
+        
+        logger.debug(f"Prometheus metrics scrape: {len(current_metrics)} targets, {sum(len(m.get('ping_times', [])) for m in current_metrics.values())} ping samples, {len(disconnect_by_period)} disconnect metrics")
+        
+        return app.response_class(
+            response=metrics_text,
+            status=200,
+            mimetype='text/plain; version=0.0.4; charset=utf-8'
+        )
+    except Exception as e:
+        logger.error(f"Error generating metrics: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/report/statistics', methods=['POST'])
 def report_statistics():
     """
@@ -569,6 +733,20 @@ def report_statistics():
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
+        # Update in-memory metrics cache for Prometheus
+        target_name = data['target_name']
+        host = data['host']
+        avg_response_time = data.get('avg_response_time', 0)
+        last_status = data.get('last_status', 1)
+        
+        # Record ping times in milliseconds (convert from seconds)
+        if avg_response_time:
+            metrics_cache.update_ping_time(target_name, host, avg_response_time * 1000)
+        
+        # Update status
+        metrics_cache.update_status(target_name, host, last_status)
+        
+        # Store in database for historical analysis
         with sqlite_lock:
             cursor = sqlite_conn.cursor()
             cursor.execute('''
@@ -577,26 +755,26 @@ def report_statistics():
                  success_rate, avg_response_time, min_response_time, max_response_time, last_status, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
             ''', (
-                data['target_name'],
-                data['host'],
+                target_name,
+                host,
                 data['total_pings'],
                 data['successful_pings'],
                 data['failed_pings'],
                 data['success_rate'],
-                data.get('avg_response_time'),
+                avg_response_time,
                 data.get('min_response_time'),
                 data.get('max_response_time'),
-                data.get('last_status')
+                last_status
             ))
             
             sqlite_conn.commit()
         
-        logger.debug(f"Recorded statistics for {data['target_name']}: "
+        logger.debug(f"Recorded statistics for {target_name}: "
                     f"success_rate={data['success_rate']}%, failed={data['failed_pings']}")
         
         return jsonify({
             'status': 'success',
-            'message': f"Statistics recorded for {data['target_name']}"
+            'message': f"Statistics recorded for {target_name}"
         }), 201
     
     except Exception as e:
@@ -627,6 +805,13 @@ def report_disconnects():
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
+        target_name = data['target_name']
+        host = data['host']
+        
+        # Update in-memory metrics cache for Prometheus
+        metrics_cache.increment_disconnect(target_name, host)
+        
+        # Store in database for historical analysis
         with sqlite_lock:
             cursor = sqlite_conn.cursor()
             cursor.execute('''
@@ -634,8 +819,8 @@ def report_disconnects():
                 (target_name, host, disconnect_time, duration_seconds, reason, timestamp)
                 VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
             ''', (
-                data['target_name'],
-                data['host'],
+                target_name,
+                host,
                 data['disconnect_time'],
                 data.get('duration_seconds'),
                 data.get('reason')
@@ -643,11 +828,11 @@ def report_disconnects():
             
             sqlite_conn.commit()
         
-        logger.info(f"Recorded disconnect for {data['target_name']}: {data['disconnect_time']}")
+        logger.info(f"Recorded disconnect for {target_name}: {data['disconnect_time']}")
         
         return jsonify({
             'status': 'success',
-            'message': f"Disconnect recorded for {data['target_name']}"
+            'message': f"Disconnect recorded for {target_name}"
         }), 201
     
     except Exception as e:
@@ -739,7 +924,7 @@ def get_target_disconnects(target_name):
 
 def main():
     """Main entry point."""
-    global logger, config, sqlite_conn, sqlite_db_path
+    global logger, config, sqlite_conn, sqlite_db_path, prometheus_mode
     
     parser = argparse.ArgumentParser(description='PingIT Web Server')
     parser.add_argument('--test', '-t', action='store_true',
@@ -803,7 +988,12 @@ def main():
                 db_path = config_db_path
                 logger.info(f"Database path changed to {db_path}")
             
-            logger.info(f"Configuration: listen_host={listen_host}, port={port}, db_path={db_path}, log_path={log_path}")
+            # Get metrics configuration (Prometheus mode)
+            metrics_config = config.get('metrics', {})
+            prometheus_mode = metrics_config.get('prometheus_mode', False)
+            logger.info(f"Prometheus mode: {prometheus_mode}")
+            
+            logger.info(f"Configuration: listen_host={listen_host}, port={port}, db_path={db_path}, log_path={log_path}, prometheus_mode={prometheus_mode}")
         else:
             logger.debug("Running in test mode - no config file loaded")
         
