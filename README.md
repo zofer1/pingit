@@ -888,6 +888,13 @@ curl http://localhost:7030/api/data
 
 MIT License - Free for personal and commercial use
 
+**Attribution appreciated!** If you find PingIT useful, please consider supporting the project:
+- 💝 **PayPal**: [Support via PayPal](https://paypal.me/zofer@hotmail.com)
+- ⭐ **GitHub**: Star this repository to show your support
+- 🐛 **Contribute**: Submit issues and pull requests to help improve the project
+
+See LICENSE file for full license details.
+
 ## 👨‍💻 Development & Contributing
 
 ### Local Development
@@ -993,12 +1000,6 @@ This project uses excellent open-source libraries:
 - [Chart.js](https://www.chartjs.org/) - Interactive charting library
 - [icmplib](https://github.com/ValvaSoft/icmplib) - ICMP ping library
 - [ecs-logging](https://github.com/elastic/ecs-logging-python) - Structured logging
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-**Attribution appreciated!** If you use PingIT, please consider crediting the original author.
 
 ---
 
