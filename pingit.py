@@ -193,12 +193,16 @@ class PingService:
                     if file_time < cutoff_time:
                         try:
                             os.remove(log_file)
-                            self.logger.debug(f"Deleted old log file: {log_file}")
+                            # Only log if logger is already initialized
+                            if hasattr(self, 'logger') and self.logger:
+                                self.logger.debug(f"Deleted old log file: {log_file}")
                         except Exception as e:
-                            self.logger.warning(f"Failed to delete log file {log_file}: {e}")
+                            # Only log if logger is already initialized
+                            if hasattr(self, 'logger') and self.logger:
+                                self.logger.warning(f"Failed to delete log file {log_file}: {e}")
         except Exception as e:
             # Don't fail service startup if cleanup fails
-            if self.logger:
+            if hasattr(self, 'logger') and self.logger:
                 self.logger.warning(f"Log cleanup error: {e}")
     
     def load_config(self):

@@ -21,18 +21,26 @@ from typing import Dict, List, Tuple, Optional
 class AdminManager:
     """Manages admin operations for PingIT."""
     
-    def __init__(self, db_path: str, config_path: str, test_mode: bool = False):
+    def __init__(self, db_path: str, webserver_config_path: str, pingit_config_path: str = None, test_mode: bool = False):
         self.db_path = db_path
-        self.config_path = config_path
-        self.config = self._load_config()
+        self.webserver_config_path = webserver_config_path
+        self.pingit_config_path = pingit_config_path or webserver_config_path
+        # Load both configs and merge them
+        self.webserver_config = self._load_config(self.webserver_config_path)
+        self.pingit_config = self._load_config(self.pingit_config_path)
+        # Merge configs: pingit config for targets, webserver config for SSL/web settings
+        self.config = {**self.pingit_config, **self.webserver_config}
+        # Note: config_path for saving is pingit_config_path (where targets live)
+        self.config_path = self.pingit_config_path
         self.is_windows = platform.system() == 'Windows'
         # Use passed test_mode parameter, or detect from paths
-        self.is_test_mode = test_mode or ('test' in config_path.lower() or db_path and 'test' in db_path.lower())
+        self.is_test_mode = test_mode or ('test' in webserver_config_path.lower() or db_path and 'test' in db_path.lower())
     
-    def _load_config(self) -> Dict:
+    def _load_config(self, config_path: str = None) -> Dict:
         """Load YAML config file."""
+        path = config_path or self.webserver_config_path
         try:
-            with open(self.config_path, 'r') as f:
+            with open(path, 'r') as f:
                 return yaml.safe_load(f) or {}
         except Exception as e:
             return {}

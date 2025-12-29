@@ -46,14 +46,7 @@ sudo systemctl stop pingit-webserver 2>/dev/null || true
 sudo systemctl stop pingit 2>/dev/null || true
 echo -e "${GREEN}✓ Services stopped${NC}\n"
 
-echo -e "${YELLOW}Step 2: Updating Python files...${NC}"
-cp pingit.py "$INSTALL_DIR/pingit.py"
-cp webserver.py "$INSTALL_DIR/webserver.py"
-chmod 644 "$INSTALL_DIR/pingit.py"
-chmod 644 "$INSTALL_DIR/webserver.py"
-echo -e "${GREEN}✓ Python files updated${NC}\n"
-
-echo -e "${YELLOW}Step 3: Updating web UI files...${NC}"
+echo -e "${YELLOW}Step 2: Updating web UI files...${NC}"
 rm -rf "$INSTALL_DIR/static"
 rm -rf "$INSTALL_DIR/templates"
 cp -r static "$INSTALL_DIR/"
@@ -62,7 +55,7 @@ chmod -R 644 "$INSTALL_DIR/static"
 chmod -R 644 "$INSTALL_DIR/templates"
 echo -e "${GREEN}✓ Web UI files updated${NC}\n"
 
-echo -e "${YELLOW}Step 4: Copying configuration files...${NC}"
+echo -e "${YELLOW}Step 3: Copying configuration files...${NC}"
 
 # Copy config files from local directory (maintained locally on Raspberry Pi)
 cp pingit-config.yaml "$CONFIG_DIR/pingit-config.yaml"
@@ -74,7 +67,7 @@ chmod 644 "$CONFIG_DIR/webserver-config.yaml"
 
 echo -e "${GREEN}✓ Configuration files copied${NC}\n"
 
-echo -e "${YELLOW}Step 5: Updating service files...${NC}"
+echo -e "${YELLOW}Step 4: Updating service files...${NC}"
 cp pingit.service /etc/systemd/system/pingit.service
 cp pingit-webserver.service /etc/systemd/system/pingit-webserver.service
 chmod 644 /etc/systemd/system/pingit.service
@@ -82,13 +75,13 @@ chmod 644 /etc/systemd/system/pingit-webserver.service
 sudo systemctl daemon-reload
 echo -e "${GREEN}✓ Service files updated${NC}\n"
 
-echo -e "${YELLOW}Step 6: Starting services...${NC}"
+echo -e "${YELLOW}Step 5: Starting services...${NC}"
 sudo systemctl start pingit-webserver
 sleep 2
 sudo systemctl start pingit
 echo -e "${GREEN}✓ Services started${NC}\n"
 
-echo -e "${YELLOW}Step 7: Verifying service configuration...${NC}"
+echo -e "${YELLOW}Step 6: Verifying service configuration...${NC}"
 # Check that pingit service is configured to run as root
 PINGIT_USER=$(systemctl cat pingit.service | grep "^User=" | cut -d= -f2)
 if [ "$PINGIT_USER" = "root" ]; then
@@ -98,7 +91,7 @@ else
     echo -e "${YELLOW}  Fix: Edit /etc/systemd/system/pingit.service and set User=root${NC}"
 fi
 
-echo -e "${YELLOW}Step 8: Verifying services are running...${NC}"
+echo -e "${YELLOW}Step 7: Verifying services are running...${NC}"
 sleep 3
 if sudo systemctl is-active --quiet pingit-webserver; then
     echo -e "${GREEN}✓ WebServer is running${NC}"

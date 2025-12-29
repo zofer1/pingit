@@ -7,7 +7,8 @@ let targetColors = {}; // Store colors for each target
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
-    loadData();
+    // Lazy load data after page render for faster initial display
+    setTimeout(loadData, 100);
     setInterval(loadData, 60000); // Auto-refresh every minute
     
     // Handle window resize for chart responsiveness

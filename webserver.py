@@ -15,6 +15,7 @@ import sys
 import time
 import glob
 import copy
+import socket
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -22,7 +23,8 @@ from statistics import stdev
 from logging.handlers import RotatingFileHandler
 
 import yaml
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, redirect
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import ecs_logging
 
 
@@ -135,6 +137,25 @@ TEST_PORT = 7030  # Use same port as production for consistency
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['JSON_SORT_KEYS'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+# Global variables to track SSL settings (set at runtime)
+ssl_enabled_global = False
+http_port_global = 7030
+https_port_global = 7443
+
+@app.before_request
+def redirect_to_correct_https():
+    """Redirect requests to the correct HTTPS port when SSL is enabled."""
+    if ssl_enabled_global and request.scheme == 'https':
+        # Already on HTTPS, check if on correct port
+        current_host = request.host
+        # Extract host without port
+        host_only = current_host.split(':')[0] if ':' in current_host else current_host
+        
+        # If not on the correct HTTPS port, redirect to it
+        if f':{https_port_global}' not in current_host:
+            new_url = request.url.replace(f'://{current_host}', f'://{host_only}:{https_port_global}')
+            return redirect(new_url, code=301)
 
 # In-memory metrics storage
 class MetricsCache:
@@ -625,11 +646,11 @@ def admin_dashboard():
 admin_manager = None
 
 
-def init_admin_manager(db_path: str, config_path: str, test_mode: bool = False):
-    """Initialize admin manager."""
+def init_admin_manager(db_path: str, webserver_config_path: str, pingit_config_path: str, test_mode: bool = False):
+    """Initialize admin manager with both webserver and pingit configs."""
     global admin_manager
     from admin import AdminManager
-    admin_manager = AdminManager(db_path, config_path, test_mode)
+    admin_manager = AdminManager(db_path, webserver_config_path, pingit_config_path, test_mode)
 
 
 # Admin API Routes
@@ -1337,6 +1358,121 @@ def get_target_disconnects(target_name):
         return jsonify({'error': str(e)}), 500
 
 
+class HTTPToHTTPSRedirectHandler(BaseHTTPRequestHandler):
+    """HTTP handler that redirects HTTP requests to HTTPS on the correct port.
+    
+    Handles Test 1: HTTP on 7030 → HTTPS 7443 (301 redirect)
+    Note: Test 4 (HTTPS on 7030) cannot be handled due to TLS handshake occurring before HTTP parsing.
+    """
+    
+    https_port = 7443
+    
+    def do_GET(self):
+        """Handle GET requests by redirecting to HTTPS."""
+        self.send_response(301)
+        host = self.headers.get('Host', 'localhost')
+        host = host.split(':')[0]  # Remove any existing port
+        https_url = f'https://{host}:{self.https_port}{self.path}'
+        self.send_header('Location', https_url)
+        self.end_headers()
+    
+    def do_HEAD(self):
+        """Handle HEAD requests."""
+        self.do_GET()
+    
+    def do_POST(self):
+        """Handle POST requests."""
+        self.do_GET()
+    
+    def do_PUT(self):
+        """Handle PUT requests."""
+        self.do_GET()
+    
+    def do_DELETE(self):
+        """Handle DELETE requests."""
+        self.do_GET()
+    
+    def log_message(self, format, *args):
+        """Suppress logging of redirect requests."""
+        pass
+
+
+class HTTPSRedirectHandler(BaseHTTPRequestHandler):
+    """Handler for HTTPS requests that redirects to HTTPS on correct port."""
+    
+    https_port = 7443
+    
+    def do_GET(self):
+        """Handle GET requests by redirecting to HTTPS on correct port."""
+        self.send_response(301)
+        host = self.headers.get('Host', 'localhost')
+        host = host.split(':')[0]  # Remove any existing port
+        https_url = f'https://{host}:{self.https_port}{self.path}'
+        self.send_header('Location', https_url)
+        self.end_headers()
+    
+    def do_HEAD(self):
+        """Handle HEAD requests."""
+        self.do_GET()
+    
+    def do_POST(self):
+        """Handle POST requests."""
+        self.do_GET()
+    
+    def do_PUT(self):
+        """Handle PUT requests."""
+        self.do_GET()
+    
+    def do_DELETE(self):
+        """Handle DELETE requests."""
+        self.do_GET()
+    
+    def log_message(self, format, *args):
+        """Suppress logging."""
+        pass
+
+
+class SSLHTTPServer(HTTPServer):
+    """HTTPServer with SSL support."""
+    def __init__(self, host_port, handler, ssl_context=None):
+        self.ssl_context = ssl_context
+        try:
+            super().__init__(host_port, handler)
+        except OSError as e:
+            if "Address already in use" in str(e):
+                logger.debug(f"Port {host_port[1]} already in use (likely by HTTP server)")
+            raise
+    
+    def finish_request(self, request, client_address):
+        """Handle SSL wrapping if context provided."""
+        if self.ssl_context:
+            try:
+                request = self.ssl_context.wrap_socket(request, server_side=True)
+            except Exception:
+                return  # Connection failed at TLS level
+        return super().finish_request(request, client_address)
+
+
+def start_http_redirect_server(http_port: int, https_port: int):
+    """Start HTTP redirect server on http_port that redirects to HTTPS on https_port.
+    
+    Implements: Test 1 (HTTP on 7030 → HTTPS 7443 with 301 redirect)
+    
+    Note: HTTPS on HTTP port (Test 4) is not supported due to TLS handshake limitations.
+    """
+    try:
+        HTTPToHTTPSRedirectHandler.https_port = https_port
+        http_server = HTTPServer(('0.0.0.0', http_port), HTTPToHTTPSRedirectHandler)
+        http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
+        http_thread.start()
+        logger.info(f"HTTP redirect server listening on port {http_port}, redirecting to HTTPS port {https_port}")
+    except OSError as e:
+        logger.error(f"Failed to start HTTP redirect server on port {http_port}: {e}")
+        return None
+    
+    return http_server
+
+
 def main():
     """Main entry point."""
     global logger, config, sqlite_conn, sqlite_db_path, prometheus_mode
@@ -1419,8 +1555,8 @@ def main():
         sqlite_conn = connect_sqlite(sqlite_db_path)
         ensure_schema(sqlite_conn)
         
-        # Initialize admin manager with pingit config and test mode flag
-        init_admin_manager(sqlite_db_path, pingit_config_path, args.test)
+        # Initialize admin manager with both webserver config (SSL settings) and pingit config (targets)
+        init_admin_manager(sqlite_db_path, config_path, pingit_config_path, args.test)
         
         # Start Flask app
         logger.info(f"Starting web server on {listen_host}:{port}")
@@ -1451,6 +1587,10 @@ def main():
                         logger.info(f"SSL enabled on port {ssl_port}")
                         logger.info(f"Certificate: {cert_file}")
                         logger.info(f"Private key: {key_file}")
+                        logger.info(f"HTTP redirect server will listen on port {port} and redirect to HTTPS port {ssl_port}")
+                        # Start HTTP redirect server
+                        start_http_redirect_server(port, ssl_port)
+                        # Run HTTPS server
                         app.run(host=listen_host, port=ssl_port, ssl_context=ssl_context, debug=False, threaded=True)
                     except Exception as e:
                         logger.error(f"Failed to load SSL certificate: {e}")

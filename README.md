@@ -77,13 +77,15 @@ sudo journalctl -u pingit-webserver -f
 **Production (Linux):**
 - **OS**: Linux with systemd (Ubuntu 18.04+, Debian 10+, CentOS 7+, Raspberry Pi OS, etc.)
   - Includes: Ubuntu, Debian, CentOS, Fedora, Raspberry Pi OS Trixie, and other systemd-based distributions
-  - **Tested on**: Raspberry Pi 1 Model B Rev 2 with Raspberry Pi OS Trixie (Debian 13)
   - **Note**: Works on various architectures (ARM, x86_64, aarch64)
 - **Systemd**: Required for service management and auto-restart
 - **Python**: 3.8+
 - **Root Access**: Required for installation and running (needed for ICMP socket creation)
 - **Network**: Outbound ICMP ping capability
 - **Ports**: 7030 (default web dashboard and API)
+
+- **Tested on**: Raspberry Pi 1 Model B Rev 2 with [Raspberry Pi OS Trixie (Debian 13)](https://www.raspberrypi.com/software/operating-systems/#raspberry-pi-os-trixie)
+![Raspberry Pi Model B](Pi_modelb.jpg)
 
 **Development (Any OS):**
 - **OS**: Windows, macOS, or Linux

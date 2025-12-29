@@ -543,7 +543,19 @@
                 opts.headers = { 'Content-Type': 'application/json' };
                 opts.body = JSON.stringify(data);
             }
-            return fetch(`/api/admin${endpoint}`, opts).then(r => r.json()).catch(e => ({ error: e.message }));
+            return fetch(`/api/admin${endpoint}`, opts)
+                .then(r => r.json().then(json => ({ 
+                    status: r.status, 
+                    data: json 
+                })))
+                .then(({ status, data }) => {
+                    // If status is not 2xx, treat as error
+                    if (status < 200 || status >= 300) {
+                        return { error: data.error || `HTTP ${status}` };
+                    }
+                    return data;
+                })
+                .catch(e => ({ error: e.message }));
         }
         
         function showConfirm(title, msg, callback) {
@@ -599,7 +611,7 @@
             if (res.error) {
                 showMessage(`Error: ${res.error}`, 'error');
             } else {
-                showMessage(res.message, 'success');
+                // Silently add target (no success pop-up, just clear form and refresh list)
                 document.getElementById('new-target-name').value = '';
                 document.getElementById('new-target-host').value = '';
                 loadTargets();
@@ -611,7 +623,7 @@
             if (res.error) {
                 showMessage(`Error: ${res.error}`, 'error');
             } else {
-                showMessage(res.message, 'success');
+                // Silently remove target (no success pop-up, just refresh list)
                 loadTargets();
             }
         }
@@ -821,7 +833,6 @@
                 document.getElementById('ssl-cert').value = res.certificate || '';
                 document.getElementById('ssl-key').value = res.private_key || '';
                 document.getElementById('ssl-port').value = res.https_port || 7443;
-                showMessage('SSL status loaded', 'success');
             }
         }
         
@@ -896,10 +907,15 @@
             }
         }
         
-        // INIT
-        loadTargets();
-        getSslStatus();
-        loadLogLocations();
+        // INIT - Load data after page is visible (lazy loading for better UX)
+        document.addEventListener('DOMContentLoaded', () => {
+            // Defer loading to give page time to render
+            setTimeout(() => {
+                loadTargets();
+                getSslStatus();
+                loadLogLocations();
+            }, 100);
+        });
     </script>
 </body>
 </html>
