@@ -8,6 +8,10 @@ ping:
   interval: 1
 reporting:
   interval: 10
+ssl:
+  certificate: N/A
+  enabled: false
+  private_key: N/A
 targets:
 - host: isr-fullvpn.amdocs.com
   name: Amdocs Isarel VPN
@@ -21,4 +25,6 @@ targets:
 - host: 8.8.8.8
   name: Google DNS
   timeout: 0.5
-webserver_config: /etc/pingit/webserver-config.yaml  # Ignored in test mode, uses ./webserver-config.yaml instead
+webserver:
+  https_port: 7443
+webserver_config: /etc/pingit/webserver-config.yaml

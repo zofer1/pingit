@@ -136,6 +136,15 @@
             background: #5a6268;
         }
         
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn:disabled:hover {
+            background: inherit;
+        }
+        
         .btn-small {
             padding: 5px 10px;
             font-size: 12px;
@@ -346,7 +355,18 @@
         
         <!-- LOGGING CONTROL -->
         <div class="section">
-            <h2>📝 Logging</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">📝 Logging</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="margin: 0; font-weight: 500; color: #555; font-size: 13px;">Log Lines:</label>
+                    <select id="log-lines-count" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; max-width: 100px;">
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                    </select>
+                </div>
+            </div>
             <div class="row">
                 <label>PingIT Level:</label>
                 <select id="log-level-pingit" onchange="changeLogLevel('pingit')">
@@ -355,8 +375,21 @@
                     <option value="WARNING">WARNING</option>
                     <option value="ERROR">ERROR</option>
                 </select>
-                <input type="text" id="log-path-pingit" placeholder="Log path" style="flex: 0 0 250px;">
-                <button class="btn btn-primary btn-small" onclick="setLogLocation('pingit')">Save Path</button>
+                <input type="text" id="log-path-pingit" placeholder="Log path" style="flex: 0 0 250px;" oninput="onLogPathChange('pingit')">
+                <button class="btn btn-primary btn-small" id="save-btn-pingit" onclick="setLogLocation('pingit')" disabled>Save Path</button>
+                <button class="btn btn-secondary btn-small" onclick="showLogTail('pingit')">📋 View</button>
+            </div>
+            <div class="row">
+                <label>WebServer Level:</label>
+                <select id="log-level-webserver" onchange="changeLogLevel('webserver')">
+                    <option value="DEBUG">DEBUG</option>
+                    <option value="INFO" selected>INFO</option>
+                    <option value="WARNING">WARNING</option>
+                    <option value="ERROR">ERROR</option>
+                </select>
+                <input type="text" id="log-path-webserver" placeholder="Log path" style="flex: 0 0 250px;" oninput="onLogPathChange('webserver')">
+                <button class="btn btn-primary btn-small" id="save-btn-webserver" onclick="setLogLocation('webserver')" disabled>Save Path</button>
+                <button class="btn btn-secondary btn-small" onclick="showLogTail('webserver')">📋 View</button>
             </div>
         </div>
         
@@ -450,8 +483,49 @@
         </div>
     </div>
     
+    <!-- Log Viewer Dialog -->
+    <div class="dialog-backdrop" id="log-dialog">
+        <div class="dialog" style="max-width: 900px; max-height: 80vh; display: flex; flex-direction: column;">
+            <h3 id="log-title">Log File</h3>
+            <div id="log-content" style="flex: 1; overflow: auto; background: #f5f5f5; padding: 12px; border-radius: 4px; margin: 12px 0; border: 1px solid #ddd;">Loading...</div>
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="hideLogDialog()">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <style id="log-table-style">
+        #log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        #log-table th {
+            background: #e0e0e0;
+            padding: 8px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #999;
+            position: sticky;
+            top: 0;
+        }
+        #log-table td {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+            word-break: break-word;
+        }
+        #log-table tr:hover {
+            background: #f0f0f0;
+        }
+        #log-table .level-DEBUG { color: #666; }
+        #log-table .level-INFO { color: #0066cc; }
+        #log-table .level-WARNING { color: #ff8c00; }
+        #log-table .level-ERROR { color: #cc0000; }
+    </style>
+    
     <script>
         let pendingConfirm = null;
+        let originalLogPaths = { pingit: '', webserver: '' };
         
         function showMessage(msg, type = 'info') {
             const div = document.createElement('div');
@@ -565,6 +639,114 @@
                 showMessage(`Error: ${res.error}`, 'error');
             } else {
                 showMessage(res.message, 'success');
+                // Update the original value and disable the button
+                originalLogPaths[service] = path;
+                document.getElementById(`save-btn-${service}`).disabled = true;
+            }
+        }
+        
+        async function loadLogLocations() {
+            try {
+                const pingitRes = await apiCall('/logs/location?service=pingit');
+                if (pingitRes.path) {
+                    document.getElementById('log-path-pingit').value = pingitRes.path;
+                    originalLogPaths.pingit = pingitRes.path;
+                }
+                
+                const webserverRes = await apiCall('/logs/location?service=webserver');
+                if (webserverRes.path) {
+                    document.getElementById('log-path-webserver').value = webserverRes.path;
+                    originalLogPaths.webserver = webserverRes.path;
+                }
+            } catch (e) {
+                console.log('Could not load log locations:', e);
+            }
+        }
+        
+        function onLogPathChange(service) {
+            const currentValue = document.getElementById(`log-path-${service}`).value;
+            const originalValue = originalLogPaths[service];
+            const button = document.getElementById(`save-btn-${service}`);
+            
+            // Enable button only if value changed and is not empty
+            if (currentValue !== originalValue && currentValue.trim() !== '') {
+                button.disabled = false;
+            } else {
+                button.disabled = true;
+            }
+        }
+        
+        function showLogDialog() {
+            document.getElementById('log-dialog').classList.add('show');
+        }
+        
+        function hideLogDialog() {
+            document.getElementById('log-dialog').classList.remove('show');
+        }
+        
+        function formatECSLogs(content) {
+            const lines = content.split('\n').filter(line => line.trim());
+            const rows = [];
+            
+            for (const line of lines) {
+                try {
+                    const entry = JSON.parse(line);
+                    rows.push({
+                        timestamp: entry['@timestamp'] || '',
+                        level: entry['log.level'] || 'INFO',
+                        message: entry.message || '',
+                        logger: entry.log?.logger || '',
+                        function: entry.log?.origin?.function || '',
+                        file: entry.log?.origin?.file?.name || ''
+                    });
+                } catch (e) {
+                    // If not JSON, treat as plain text line
+                    rows.push({
+                        timestamp: '',
+                        level: 'INFO',
+                        message: line,
+                        logger: '',
+                        function: '',
+                        file: ''
+                    });
+                }
+            }
+            
+            // Create HTML table
+            let html = '<table id="log-table"><thead><tr><th>Timestamp</th><th>Level</th><th>Message</th><th>Function</th></tr></thead><tbody>';
+            
+            for (const row of rows) {
+                const levelClass = `level-${row.level}`;
+                const timestamp = row.timestamp ? new Date(row.timestamp).toLocaleString() : '';
+                html += `<tr>
+                    <td style="font-size: 11px;">${timestamp}</td>
+                    <td><span class="${levelClass}"><strong>${row.level}</strong></span></td>
+                    <td>${row.message}</td>
+                    <td style="font-size: 11px; color: #666;">${row.function}</td>
+                </tr>`;
+            }
+            
+            html += '</tbody></table>';
+            return html;
+        }
+        
+        async function showLogTail(service) {
+            const lineCount = parseInt(document.getElementById('log-lines-count').value) || 20;
+            showLogDialog();
+            document.getElementById('log-title').textContent = `${service.charAt(0).toUpperCase() + service.slice(1)} Log - Last ${lineCount} Lines`;
+            document.getElementById('log-content').innerHTML = 'Loading...';
+            
+            const res = await apiCall(`/logs/tail?service=${service}&lines=${lineCount}`);
+            const logContent = document.getElementById('log-content');
+            
+            if (res.error) {
+                logContent.innerHTML = `<div style="color: #cc0000; padding: 12px;">Error: ${res.error}</div>`;
+            } else if (!res.content) {
+                logContent.innerHTML = '<div style="color: #999; padding: 12px;">No log content available</div>';
+            } else {
+                // Try to format as ECS logs
+                const formattedHtml = formatECSLogs(res.content);
+                logContent.innerHTML = formattedHtml;
             }
         }
         
@@ -717,6 +899,7 @@
         // INIT
         loadTargets();
         getSslStatus();
+        loadLogLocations();
     </script>
 </body>
 </html>

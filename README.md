@@ -24,6 +24,17 @@ python pingit.py --test
 # Access dashboard
 open http://localhost:7030
 ```
+> **Test Mode Files** (all in project directory - easily cleaned up):
+>
+> **Database & Config:**
+> - `./pingit.db` - SQLite database with ping statistics and disconnect events
+> - Config: Built-in defaults (no external config file needed in test mode)
+>
+> **Logs (auto-generated with timestamps):**
+> - `./pingit-YYYY-MM-DD-HH-MM-SS.log` - PingIT service logs
+> - `./webserver-YYYY-MM-DD-HH-MM-SS.log` - WebServer logs
+>
+> **Note:** No system configuration changes. Simply delete files to reset. In **production**, files are stored under `/etc/pingit/`, `/var/lib/pingit/`, and `/var/log/pingit/`.
 
 **Production (Linux with Systemd):**
 ```bash
@@ -82,43 +93,7 @@ sudo journalctl -u pingit-webserver -f
 
 ## 🚀 Installation
 
-### Development Mode (Local Testing)
-
-Perfect for development, testing, and cross-platform use. **Test mode uses local files in the project directory - no system-wide installation needed.**
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/pingit.git
-cd pingit
-
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate          # Linux/macOS
-# or
-.\.venv\Scripts\Activate.ps1      # Windows PowerShell
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start services in two terminals
-# Terminal 1: WebServer
-python webserver.py --test
-
-# Terminal 2: PingIT (wait 3-4 seconds)
-python pingit.py --test
-
-# Access dashboard at http://localhost:7030
-```
-
-**Test Mode Features:**
-- 📁 **Local Database**: `./pingit.db` in project directory
-- 📝 **Local Logs**: `pingit-YYYY-MM-DD-HH-MM-SS.log` in project directory
-- ⚙️ **Hardcoded Config**: Uses default in-memory configuration (no config file needed)
-- 🔄 **Default Targets**: Monitors 4 common targets (Google DNS, Cloudflare, etc.)
-- 💾 **No System Changes**: All data stays in project folder
-- 🗑️ **Easy Cleanup**: Just delete project folder or `rm pingit.db` to reset
-
-### Production Installation (Linux with Systemd)
+### Linux with Systemd
 
 Automated setup for production Linux deployments:
 
@@ -152,30 +127,6 @@ If any Python packages are missing, the script will:
 3. Install via pip3 or fail with clear error
 
 ## ⚙️ Configuration
-
-### Development Mode (Test)
-
-Test mode uses **local files in the project directory** - no system-wide configuration needed!
-
-**Locations (all in project root):**
-- 📁 **Database**: `./pingit.db` (local SQLite file)
-- 📝 **Logs**: `./pingit-YYYY-MM-DD-HH-MM-SS.log` and `./webserver-YYYY-MM-DD-HH-MM-SS.log`
-- 🌐 **Web Server**: `http://localhost:7030`
-- ⚙️ **Config**: Built-in defaults (no external file needed)
-
-**Default Configuration:**
-- Ping Interval: 2 seconds
-- Default Targets: 4 targets (Google DNS, Cloudflare, etc.)
-- Log Level: INFO
-- Auto-refresh Dashboard: Every 60 seconds
-
-**Running Test Mode:**
-```bash
-python webserver.py --test    # Uses local ./pingit.db
-python pingit.py --test       # Writes to ./pingit-*.log
-```
-
-Everything stays in your project folder. No system changes, no installation required!
 
 ### Production Configuration
 
@@ -262,23 +213,6 @@ database:
 
 ## 🔄 Service Management
 
-### Development Mode (Test)
-
-```bash
-# Terminal 1: Start web server
-cd C:\projects\general\pingit
-.\.venv\Scripts\Activate.ps1  # Windows, or use source for Linux/macOS
-python webserver.py --test
-
-# Terminal 2: Start ping service (after 3-4 seconds)
-python pingit.py --test
-
-# Stop all services
-Get-Process python* | Stop-Process -Force  # Windows PowerShell
-# or
-pkill python  # Linux/macOS
-```
-
 ### Production Mode (Linux Systemd)
 
 ```bash
@@ -314,6 +248,19 @@ Access the web dashboard at `http://localhost:7030` (default port) for:
 - **Historical Graphs**: Response time trends over time
 - **Disconnect Events**: Log of all network disconnects with timestamps
 - **Target Details**: Min/max/average response times per target
+
+### 🛠️ Admin Dashboard
+
+Access the admin dashboard at `http://localhost:7030/admin` to manage PingIT:
+- **Target Management**: Add/remove ping targets
+- **Logging Control**: Configure log levels and paths independently for each service
+- **Service Control**: Start, stop, restart services with live status indicators
+- **SSL Configuration**: Enable HTTPS and manage certificates
+- **Prometheus Mode**: Toggle metrics collection
+- **Test Data**: Generate sample data for testing
+- **Database**: Backup or reset the database
+
+For detailed admin dashboard documentation, see [ADMIN_DASHBOARD.md](ADMIN_DASHBOARD.md)
 
 ### 🔒 HTTPS/SSL Support
 
@@ -374,10 +321,10 @@ sudo systemctl restart pingit-webserver
 
 PingIT uses **ECS (Elastic Common Schema) JSON logging** for all output, making logs machine-readable and compatible with modern observability platforms.
 
-**Logging Settings (in config files):**
+**Logging Settings (in config files - both PingIT and WebServer):**
 ```yaml
 logging:
-  level: INFO          # DEBUG, INFO, WARNING, ERROR
+  level: INFO          # DEBUG, INFO, WARNING, ERROR (configurable per service)
   path: /var/log/pingit  # Production: /var/log/pingit | Test: ./
 ```
 
@@ -401,19 +348,6 @@ logging:
 
 **Development Mode:**
 ```bash
-# View latest PingIT log (Windows PowerShell)
-Get-ChildItem pingit-*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Get-Content $_ }
-
-# View latest WebServer log (Windows PowerShell)
-Get-ChildItem webserver-*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Get-Content $_ }
-
-# Or on Linux/macOS
-tail -f pingit-*.log
-tail -f webserver-*.log
-```
-
-**Production Mode (Linux):**
-```bash
 # Follow PingIT logs in real-time via systemd
 sudo journalctl -u pingit -f
 
@@ -428,9 +362,11 @@ sudo journalctl -u pingit --since "1 hour ago"
 
 # View raw log files directly (ECS JSON format)
 sudo tail -f /var/log/pingit/pingit-*.log
+sudo tail -f /var/log/pingit/webserver-*.log
 
 # Parse and pretty-print ECS JSON logs
 sudo cat /var/log/pingit/pingit-*.log | jq '.'
+sudo cat /var/log/pingit/webserver-*.log | jq '.'
 ```
 
 ### ECS Log Format
@@ -457,6 +393,8 @@ All logs are in **ECS (Elastic Common Schema) JSON format** for structured loggi
 
 ### Log Levels
 
+Log levels can be configured independently for both PingIT and WebServer services:
+
 | Level | Use Case | Output |
 |-------|----------|--------|
 | **DEBUG** | Development & troubleshooting | Verbose output, every ping, detailed system info |
@@ -464,13 +402,19 @@ All logs are in **ECS (Elastic Common Schema) JSON format** for structured loggi
 | **WARNING** | Reduced logging | Only warnings and errors |
 | **ERROR** | Minimal logging | Only errors |
 
-**Set log level in config:**
+**Set log level in PingIT config** (`pingit-config.yaml`):
 ```yaml
 logging:
   level: DEBUG    # Change to DEBUG for development
 ```
 
-## 📡 Data Storage & API
+**Set log level in WebServer config** (`webserver-config.yaml`):
+```yaml
+logging:
+  level: INFO     # Separate control for WebServer
+```
+
+## 📡 Data Storage
 
 ### SQLite Database
 
@@ -483,23 +427,9 @@ Database location:
 - **Development**: `./pingit.db`
 - **Production**: `/var/lib/pingit/pingit.db`
 
-### REST API
-
-The web server exposes a REST API for programmatic access to monitoring data:
-
-```
-GET http://localhost:7030/api/data
-```
-
-Returns current statistics and dashboard data in JSON format. This can be used for:
-- Custom dashboards
-- Integration with other systems
-- Data export
-- Monitoring automation
-
 ### Prometheus Metrics Endpoint
 
-PingIT exposes a **Prometheus-compatible metrics endpoint** for integration with Prometheus, Grafana, and other observability platforms. Metrics are held **in-memory** for performance, collected from live ping data, and cleared after each Prometheus scrape.
+PingIT exposes a **Prometheus-compatible metrics endpoint** for integration with Prometheus, Grafana, and other observability platforms.
 
 **Access Metrics:**
 ```
@@ -513,13 +443,6 @@ GET http://localhost:7030/metrics
 | `pingit_ping_time_ms` | Gauge | `target_name`, `host` | Average ping response time in milliseconds |
 | `pingit_disconnect_events_total` | Counter | `target_name`, `host` | Total disconnect events since last scrape |
 
-**Key Features:**
-- ✅ **In-Memory Storage** - No database queries, fast scraping
-- ✅ **Auto-Clearing** - Metrics cleared after each Prometheus scrape (drain pattern)
-- ✅ **Thread-Safe** - Safe concurrent access from multiple threads
-- ✅ **Lightweight** - ~100 KB base + per-target overhead
-- ✅ **Real-Time** - Fresh data from live ping collection
-
 **Example Prometheus Configuration:**
 
 Add to your `prometheus.yml`:
@@ -532,208 +455,6 @@ scrape_configs:
     scrape_interval: 15s      # Scrape every 15 seconds
     metrics_path: '/metrics'   # Prometheus metrics endpoint
 ```
-
-**Example Prometheus Queries:**
-
-```promql
-# Current ping time for all targets
-pingit_ping_time_ms
-
-# Ping time for specific target
-pingit_ping_time_ms{target_name="google_dns"}
-
-# Disconnect rate (events per minute)
-rate(pingit_disconnect_events_total[1m])
-
-# Total disconnects by target
-pingit_disconnect_events_total
-
-# Combine with other metrics
-pingit_ping_time_ms * 2  # Highlight slow targets
-```
-
-**Benefits:**
-
-- ✅ **Real-time Monitoring** - Scrape metrics every 15+ seconds
-- ✅ **Grafana Integration** - Build custom dashboards
-- ✅ **Alerting** - Set up alerts based on connectivity metrics
-- ✅ **Time-series Data** - Historical trend analysis
-- ✅ **Multi-target Support** - Monitor all targets in one place
-
-
-## 🎯 Use Cases
-
-### Home Network Monitoring
-
-Monitor internet connectivity, local network devices, and gateways:
-
-```yaml
-targets:
-  - name: router
-    host: 192.168.1.1
-    timeout: 0.5
-  
-  - name: internet_gateway
-    host: 8.8.8.8
-    timeout: 0.5
-  
-  - name: nas_server
-    host: 192.168.1.50
-    timeout: 0.5
-```
-
-### Corporate VPN/Network
-
-Monitor critical infrastructure, VPN connectivity, and external services:
-
-```yaml
-targets:
-  - name: corporate_vpn
-    host: vpn.company.com
-    timeout: 1.0
-  
-  - name: office_gateway
-    host: 10.0.0.1
-    timeout: 0.5
-  
-  - name: dns_primary
-    host: 10.0.0.10
-    timeout: 0.5
-```
-
-### Data Center/Cloud Monitoring
-
-Track multiple regions and infrastructure components:
-
-```yaml
-targets:
-  - name: core_switch_1
-    host: 10.0.0.1
-    timeout: 0.3
-  
-  - name: firewall_primary
-    host: 10.0.1.1
-    timeout: 0.3
-  
-  - name: aws_endpoint
-    host: ec2.us-east-1.amazonaws.com
-    timeout: 1.0
-  
-  - name: azure_endpoint
-    host: management.azure.com
-    timeout: 1.0
-```
-
-
-## 🐛 Troubleshooting
-
-### Development Mode Issues
-
-**Services Won't Start**
-```bash
-# Check Python is installed
-python --version
-
-# Check virtual environment
-Test-Path .venv  # Windows PowerShell
-
-# Activate and verify dependencies
-.\.venv\Scripts\Activate.ps1
-pip list
-```
-
-**Port Already in Use**
-```bash
-# Check if port 7030 is available
-netstat -ano | findstr :7030  # Windows
-lsof -i :7030  # Linux/macOS
-
-# Kill process using port or use a different port
-python webserver.py --test 
-
-**No Data Appearing**
-- Wait 20-30 seconds for first data collection
-- Check logs for errors: `Get-Content webserver-*.log -Tail 50`
-- Ensure webserver started before pingit (3-4 second delay)
-
-### Production Mode Issues
-
-**Services Won't Start**
-
-```bash
-# Check status
-sudo systemctl status pingit
-sudo systemctl status pingit-webserver
-
-# View recent logs
-sudo journalctl -u pingit -n 50
-
-# Check if port is available
-sudo netstat -tlnp | grep 7030
-
-# Test manually
-sudo -u pingit python3 /opt/pingit/pingit.py --config /etc/pingit/pingit-config.yaml
-```
-
-**Permission Denied / ICMP Errors**
-
-```bash
-# Ensure all files are owned by root
-sudo chown -R root:root /opt/pingit /etc/pingit /var/lib/pingit /var/log/pingit
-
-# Set correct permissions
-sudo chmod -R 755 /opt/pingit /etc/pingit /var/lib/pingit /var/log/pingit
-sudo chmod 644 /etc/pingit/*.yaml
-sudo chmod 644 /var/lib/pingit/pingit.db
-
-# Restart services
-sudo systemctl restart pingit pingit-webserver
-
-# Verify running as root (should show User=root)
-sudo systemctl show -p User pingit
-```
-
-**Web Dashboard Not Accessible**
-
-```bash
-# Check if WebServer is running
-sudo systemctl status pingit-webserver
-
-# Try to access dashboard
-curl http://localhost:7030
-
-# Check logs
-sudo journalctl -u pingit-webserver -n 100
-```
-
-**No Data in Dashboard**
-
-```bash
-# Check both services are running
-sudo systemctl status pingit pingit-webserver
-
-# Verify database has data
-sqlite3 /var/lib/pingit/pingit.db "SELECT COUNT(*) FROM ping_statistics;"
-
-# Check logs for errors
-sudo journalctl -u pingit -n 50
-sudo journalctl -u pingit-webserver -n 50
-```
-
-**High CPU Usage**
-
-```bash
-# Check process and its CPU usage
-ps aux | grep python
-
-# Reduce ping frequency in config
-sudo nano /etc/pingit/pingit-config.yaml
-# Increase ping.interval value
-
-# Restart service
-sudo systemctl restart pingit
-```
-
 
 ## 🔐 Security
 
@@ -758,31 +479,16 @@ sudo systemctl restart pingit
 ### File Permissions
 
 ```
-/opt/pingit/              755  (rwxr-xr-x)  root:root
-/etc/pingit/              755  (rwxr-xr-x)  root:root
-/var/lib/pingit/          755  (rwxr-xr-x)  root:root
-/var/log/pingit/          755  (rwxr-xr-x)  root:root
-/etc/pingit/config.yaml   644  (rw-r--r--)  root:root
+/opt/pingit/                      755  (rwxr-xr-x)  root:root
+/etc/pingit/                      755  (rwxr-xr-x)  root:root
+/var/lib/pingit/                  755  (rwxr-xr-x)  root:root
+/var/log/pingit/                  755  (rwxr-xr-x)  root:root
+/etc/pingit/pingit-config.yaml    644  (rw-r--r--)  root:root
+/etc/pingit/webserver-config.yaml 644  (rw-r--r--)  root:root
+/var/lib/pingit/pingit.db         644  (rw-r--r--)  root:root
 ```
 
 All files are owned by root with appropriate read/write permissions.
-
-### Web Dashboard Security
-
-- Dashboard accessible via web interface
-- Recommend restricting access via firewall or reverse proxy
-- No sensitive data displayed (only counts and timings)
-- Use HTTPS in production (see setup guides)
-
-### Firewall Considerations
-
-```bash
-# Allow outbound ICMP (pings)
-sudo ufw allow out proto icmp from any to any icmptype 8
-
-# Allow web dashboard access (from your network)
-sudo ufw allow from 192.168.1.0/24 to any port 7030
-```
 
 ## 📁 File Structure
 
@@ -877,101 +583,6 @@ sudo userdel -r pingit  # Remove system user
 sudo systemctl daemon-reload
 ```
 
-## 🚀 Performance
-
-Typical resource usage (production with 4 targets):
-
-- **CPU**: 1-3% (depends on ping frequency)
-- **Memory**: 50-100MB (Flask ~20-30MB, Python runtime ~20-50MB)
-- **Disk Growth**: 0.5-1MB per target per month (SQLite database)
-- **Network**: ~100 bytes per ping (ICMP)
-- **Dashboard**: ~2KB per data point
-- **Query Performance**: Sub-second for all dashboard queries
-
-**Scaling Guidelines:**
-- For 10+ targets: Reduce log level to WARNING
-- For 50+ targets: Consider separate monitoring for different groups
-- For 100+ targets: Deploy multiple PingIT instances with dedicated configs
-
-## 🔗 Integration
-
-### Dashboard Integration
-
-Access real-time data from PingIT through multiple interfaces:
-
-1. **Web Dashboard** (built-in):
-   - Access at `http://localhost:7030`
-   - Real-time status and statistics
-   - Historical graphs and trends
-   - Disconnect events log
-
-2. **REST API** (for custom integrations):
-   - Endpoint: `http://localhost:7030/api/data`
-   - Returns JSON formatted statistics
-   - Can be used for custom dashboards or scripts
-
-3. **Prometheus Metrics** (for observability platforms):
-   - Endpoint: `http://localhost:7030/metrics`
-   - Prometheus-compatible text format
-   - Integration with Grafana for custom dashboards
-   - Alert rules for automated notifications
-   - Time-series data storage in Prometheus/VictoriaMetrics
-
-### Grafana Integration Example
-
-Create a Grafana dashboard to visualize PingIT metrics:
-
-1. **Add Prometheus Data Source** in Grafana pointing to your Prometheus instance
-2. **Create Panels** using these queries:
-   - Success Rate: `pingit_ping_success_rate{target_name=~".*"}`
-   - Response Time: `pingit_response_time_avg_ms{target_name=~".*"}`
-   - Target Status: `pingit_target_status{target_name=~".*"}`
-   - Disconnect Events: `rate(pingit_disconnect_events_total[5m])`
-
-3. **Set Alerts** based on metrics:
-   - Alert when target is down: `pingit_target_status == 0`
-   - Alert on slow response: `pingit_response_time_avg_ms > 100`
-   - Alert on low success: `pingit_ping_success_rate < 95`
-
-## 📝 Version History
-
-- **v1.0.0** - Initial release with web dashboard, SQLite backend, REST API, ECS logging, and disconnect detection
-
-## 🆘 Getting Help
-
-### Check Logs
-
-```bash
-sudo journalctl -u pingit -f
-sudo tail -f /var/log/pingit/pingit.log
-```
-
-### Verify Setup
-
-```bash
-# Check PingIT service running
-sudo systemctl status pingit
-
-# Check WebServer service running
-sudo systemctl status pingit-webserver
-
-# Check dashboard access
-curl http://localhost:7030
-
-# Check API response
-curl http://localhost:7030/api/data
-```
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| Service won't start | Check logs, verify config syntax, ensure port 7030 available |
-| Permission denied | Run `sudo chown -R pingit:pingit /etc/pingit /var/log/pingit` |
-| Can't access dashboard | Verify both services running, check port 7030 is open |
-| No data appearing | Wait 20+ seconds, check logs for errors |
-| High memory usage | Reduce target count, increase ping intervals |
-
 ## 📜 License
 
 MIT License - Free for personal and commercial use
@@ -982,31 +593,6 @@ MIT License - Free for personal and commercial use
 - 🐛 **Contribute**: Submit issues and pull requests to help improve the project
 
 See LICENSE file for full license details.
-
-## 👨‍💻 Development & Contributing
-
-### Local Development
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/pingit.git
-cd pingit
-
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-.\.venv\Scripts\Activate.ps1  # Windows
-
-# Install in development mode
-pip install -r requirements.txt
-
-# Run tests
-python -m pytest tests/  # If tests exist
-
-# Start services in test mode
-python webserver.py --test
-python pingit.py --test
-```
 
 ### Code Structure
 
@@ -1038,48 +624,6 @@ python pingit.py --test
 - `README.md` - This file
 - `OPERATION_GUIDE.md` - Operations and troubleshooting
 - `LICENSE` - MIT License
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-**Code Standards:**
-- Follow PEP 8 for Python code
-- Use type hints where appropriate
-- Add docstrings to functions
-- Test in both development and production modes
-
-## 🎯 Getting Started
-
-### Quick Start (Development)
-```bash
-git clone https://github.com/yourusername/pingit.git
-cd pingit
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python webserver.py --test      # Terminal 1
-python pingit.py --test          # Terminal 2 (after 3-4 seconds)
-# Access http://localhost:7030
-```
-
-### Quick Start (Production Linux)
-```bash
-sudo bash setup.sh               # Automated installation
-sudo systemctl start pingit pingit-webserver
-sudo systemctl enable pingit pingit-webserver
-# Access http://your-server:7030
-```
-
-## 📞 Support
-
-- **Documentation**: See `OPERATION_GUIDE.md` for detailed operations
-- **Issues**: Check GitHub Issues for known problems
-- **Logs**: Check application logs for error details (see Troubleshooting section)
 
 ## 🙏 Acknowledgments
 
