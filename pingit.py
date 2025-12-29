@@ -352,7 +352,7 @@ class PingService:
     
     def _report_disconnect(self, target: PingTarget, reason: str):
         """Report a disconnection event."""
-        disconnect_time = datetime.now().isoformat()
+        disconnect_time = int(datetime.now().timestamp() * 1000)  # Unix milliseconds
         
         self.logger.debug(f"Disconnect detected for {target.name} ({target.host}): {reason}")
         

@@ -553,14 +553,20 @@ class AdminManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Delete data
+            # Delete data from both tables
             cursor.execute('DELETE FROM ping_statistics')
             cursor.execute('DELETE FROM disconnect_times')
             
+            # Ensure the delete is committed
             conn.commit()
+            
+            # Vacuum to reclaim space and ensure file is updated on disk
+            cursor.execute('VACUUM')
+            conn.commit()
+            
             conn.close()
             
-            return True, "Database reset successfully"
+            return True, "Database reset successfully (persisted)"
         except Exception as e:
             return False, f"Failed to reset database: {str(e)}"
     

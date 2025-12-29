@@ -121,6 +121,34 @@ def filter_points_by_trend(points: List[Dict], baseline_points: int = 20, outlie
     
     return filtered
 
+
+def normalize_timestamp_ms(value) -> int:
+    """Convert various timestamp formats to Unix milliseconds.
+    
+    Handles:
+    - integers/floats already in milliseconds
+    - strings containing milliseconds
+    - ISO 8601 strings (converted via datetime)
+    Falls back to 0 on failure.
+    """
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        # First try raw integer/float string
+        try:
+            return int(float(value))
+        except Exception:
+            pass
+        # Then try ISO 8601
+        try:
+            dt = datetime.fromisoformat(value)
+            return int(dt.timestamp() * 1000)
+        except Exception:
+            return 0
+    return 0
+
 # Configuration
 DEFAULT_CONFIG_PATH = "/etc/pingit/webserver-config.yaml"
 DEFAULT_LOG_PATH = "/var/log/pingit"
@@ -347,7 +375,7 @@ def ensure_schema(conn: sqlite3.Connection):
                 min_response_time REAL,
                 max_response_time REAL,
                 last_status INTEGER,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timestamp INTEGER DEFAULT (CAST(STRFTIME('%s', 'now') * 1000 AS INTEGER)),
                 UNIQUE(target_name, timestamp)
             )
         ''')
@@ -358,10 +386,10 @@ def ensure_schema(conn: sqlite3.Connection):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 target_name TEXT NOT NULL,
                 host TEXT NOT NULL,
-                disconnect_time DATETIME NOT NULL,
+                disconnect_time INTEGER NOT NULL,
                 duration_seconds INTEGER,
                 reason TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp INTEGER DEFAULT (CAST(STRFTIME('%s', 'now') * 1000 AS INTEGER))
             )
         ''')
         
@@ -378,6 +406,128 @@ def ensure_schema(conn: sqlite3.Connection):
         
         conn.commit()
         logger.info("Database schema verified")
+
+
+def migrate_timestamps_to_epoch(conn: sqlite3.Connection):
+    """Migrate timestamp columns from TEXT (ISO 8601) to INTEGER (Unix milliseconds).
+    
+    This function:
+    1. Creates new columns with INTEGER type
+    2. Migrates data from old TEXT columns to new INTEGER columns
+    3. Drops old TEXT columns
+    4. Renames new columns to original names
+    5. Recreates indexes
+    
+    This should only be called once during upgrade with --migrate-timestamps flag.
+    """
+    try:
+        with sqlite_lock:
+            cursor = conn.cursor()
+            
+            logger.info("Starting timestamp migration from TEXT to INTEGER (Unix milliseconds)...")
+            
+            # Check if migration is needed (if columns are TEXT type)
+            cursor.execute("PRAGMA table_info(ping_statistics)")
+            columns = cursor.fetchall()
+            timestamp_type = None
+            for col in columns:
+                if col[1] == 'timestamp':
+                    timestamp_type = col[2]
+                    break
+            
+            if timestamp_type == 'INTEGER':
+                logger.info("Timestamps are already INTEGER - migration not needed")
+                return
+            
+            logger.info(f"Current timestamp type: {timestamp_type}, migrating to INTEGER...")
+            
+            # Migrate ping_statistics table
+            logger.info("Migrating ping_statistics table...")
+            cursor.execute('''
+                ALTER TABLE ping_statistics RENAME TO ping_statistics_old
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE ping_statistics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_name TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    total_pings INTEGER NOT NULL,
+                    successful_pings INTEGER NOT NULL,
+                    failed_pings INTEGER NOT NULL,
+                    success_rate REAL NOT NULL,
+                    avg_response_time REAL,
+                    min_response_time REAL,
+                    max_response_time REAL,
+                    last_status INTEGER,
+                    timestamp INTEGER DEFAULT (CAST(STRFTIME('%s', 'now') * 1000 AS INTEGER)),
+                    UNIQUE(target_name, timestamp)
+                )
+            ''')
+            
+            # Migrate data: convert ISO 8601 TEXT to Unix milliseconds
+            cursor.execute('''
+                INSERT INTO ping_statistics 
+                SELECT id, target_name, host, total_pings, successful_pings, failed_pings,
+                       success_rate, avg_response_time, min_response_time, max_response_time,
+                       last_status,
+                       CAST(STRFTIME('%s', timestamp) * 1000 AS INTEGER) as timestamp
+                FROM ping_statistics_old
+            ''')
+            
+            cursor.execute('DROP TABLE ping_statistics_old')
+            logger.info("ping_statistics table migrated successfully")
+            
+            # Migrate disconnect_times table
+            logger.info("Migrating disconnect_times table...")
+            cursor.execute('''
+                ALTER TABLE disconnect_times RENAME TO disconnect_times_old
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE disconnect_times (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target_name TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    disconnect_time INTEGER NOT NULL,
+                    duration_seconds INTEGER,
+                    reason TEXT,
+                    timestamp INTEGER DEFAULT (CAST(STRFTIME('%s', 'now') * 1000 AS INTEGER))
+                )
+            ''')
+            
+            # Migrate data: convert ISO 8601 TEXT to Unix milliseconds
+            cursor.execute('''
+                INSERT INTO disconnect_times 
+                SELECT id, target_name, host,
+                       CAST(STRFTIME('%s', disconnect_time) * 1000 AS INTEGER) as disconnect_time,
+                       duration_seconds, reason,
+                       CAST(STRFTIME('%s', timestamp) * 1000 AS INTEGER) as timestamp
+                FROM disconnect_times_old
+            ''')
+            
+            cursor.execute('DROP TABLE disconnect_times_old')
+            logger.info("disconnect_times table migrated successfully")
+            
+            # Recreate indexes
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_ping_statistics_target_timestamp 
+                ON ping_statistics(target_name, timestamp)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_disconnect_times_target 
+                ON disconnect_times(target_name, disconnect_time)
+            ''')
+            
+            conn.commit()
+            logger.info("✅ Timestamp migration completed successfully!")
+            logger.info("   - ping_statistics: TEXT → INTEGER (Unix milliseconds)")
+            logger.info("   - disconnect_times: TEXT → INTEGER (Unix milliseconds)")
+            
+    except Exception as e:
+        logger.error(f"❌ Timestamp migration failed: {e}")
+        raise
 
 
 @app.route('/')
@@ -400,41 +550,68 @@ def api_data():
             hours_back = 24 * 30
         else:  # default to 24h
             hours_back = 24
+
+        # SQLite expressions to normalize timestamps (support integer ms and ISO text)
+        timestamp_ms_expr = """
+            CASE 
+                WHEN typeof(timestamp) IN ('integer','real') THEN CAST(timestamp AS INTEGER)
+                WHEN typeof(timestamp) = 'text' THEN
+                    CASE 
+                        WHEN instr(timestamp, '-') > 0 THEN CAST(strftime('%s', timestamp) * 1000 AS INTEGER)
+                        ELSE CAST(timestamp AS INTEGER)
+                    END
+                ELSE 0
+            END
+        """
+        disconnect_ms_expr = """
+            CASE 
+                WHEN typeof(disconnect_time) IN ('integer','real') THEN CAST(disconnect_time AS INTEGER)
+                WHEN typeof(disconnect_time) = 'text' THEN
+                    CASE 
+                        WHEN instr(disconnect_time, '-') > 0 THEN CAST(strftime('%s', disconnect_time) * 1000 AS INTEGER)
+                        ELSE CAST(disconnect_time AS INTEGER)
+                    END
+                ELSE 0
+            END
+        """
         
         with sqlite_lock:
             cursor = sqlite_conn.cursor()
             
             # Get all statistics from the time range
-            cursor.execute('''
+            # Calculate cutoff time in milliseconds
+            cutoff_ms = int((datetime.now().timestamp() - (hours_back * 3600)) * 1000)
+            cursor.execute(f'''
                 SELECT target_name, host, total_pings, successful_pings, failed_pings, 
                        success_rate, avg_response_time, min_response_time, max_response_time,
-                       last_status
+                       last_status,
+                       {timestamp_ms_expr} as ts_ms
                 FROM ping_statistics
-                WHERE datetime(timestamp) > datetime('now', '-' || ? || ' hours', 'localtime')
+                WHERE {timestamp_ms_expr} > ?
                 ORDER BY target_name
-            ''', (hours_back,))
+            ''', (cutoff_ms,))
             
             stats_rows = cursor.fetchall()
             
             # Get aggregated disconnects by target in the time range
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT target_name, host, COUNT(*) as disconnect_count, 
-                       MAX(disconnect_time) as last_disconnect
+                       MAX({disconnect_ms_expr}) as last_disconnect
                 FROM disconnect_times
-                WHERE datetime(substr(disconnect_time, 1, 19)) > datetime('now', '-' || ? || ' hours', 'localtime')
+                WHERE {disconnect_ms_expr} > ?
                 GROUP BY target_name, host
                 ORDER BY target_name
-            ''', (hours_back,))
+            ''', (cutoff_ms,))
             
             disconnect_rows = cursor.fetchall()
             
             # Get time-series data for response time over time
-            cursor.execute('''
-                SELECT target_name, timestamp, avg_response_time, min_response_time, max_response_time
+            cursor.execute(f'''
+                SELECT target_name, {timestamp_ms_expr} as ts_ms, avg_response_time, min_response_time, max_response_time
                 FROM ping_statistics
-                WHERE datetime(timestamp) > datetime('now', '-' || ? || ' hours', 'localtime')
-                ORDER BY target_name, timestamp
-            ''', (hours_back,))
+                WHERE {timestamp_ms_expr} > ?
+                ORDER BY target_name, ts_ms
+            ''', (cutoff_ms,))
             
             timeseries_rows = cursor.fetchall()
         
@@ -509,11 +686,12 @@ def api_data():
         disconnects_data = []
         for row in disconnect_rows:
             target_name = row['target_name']
+            last_dc = normalize_timestamp_ms(row['last_disconnect'])
             disconnects_data.append({
                 'name': target_name,
                 'host': row['host'],
                 'disconnect_count': row['disconnect_count'],
-                'last_disconnect': row['last_disconnect']
+                'last_disconnect': last_dc
             })
             
             # Update disconnect count in targets dict
@@ -553,7 +731,8 @@ def api_data():
                     'max_response_times': []
                 }
             
-            raw_timeseries_data[target_name]['timestamps'].append(row['timestamp'])
+            ts = normalize_timestamp_ms(row['ts_ms'])
+            raw_timeseries_data[target_name]['timestamps'].append(ts)
             raw_timeseries_data[target_name]['avg_response_times'].append(
                 float(row['avg_response_time']) if row['avg_response_time'] is not None else 0.0
             )
@@ -569,14 +748,11 @@ def api_data():
         for target_name, data in raw_timeseries_data.items():
             original_count = len(data['timestamps'])
             
-            # Convert timestamps to milliseconds (Unix epoch) for X-axis
-            timestamps_ms = [int(datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp() * 1000) 
-                            for ts in data['timestamps']]
-            
+            # Timestamps are already in milliseconds (Unix epoch), no conversion needed
             # Create points with x (timestamp) and y (response time) for filtering
             points = [
                 {'x': ts_ms, 'y': avg_time}
-                for ts_ms, avg_time in zip(timestamps_ms, data['avg_response_times'])
+                for ts_ms, avg_time in zip(data['timestamps'], data['avg_response_times'])
             ]
             
             # Filter points: maintain 20 baseline points + any outliers > 5ms deviation
@@ -854,7 +1030,9 @@ def admin_reset_database():
     success, message = admin_manager.reset_database()
     
     if success:
-        logger.warning(f"Admin: DATABASE RESET - {message}")
+        # Clear the in-memory metrics cache as well
+        metrics_cache.clear()
+        logger.warning(f"Admin: DATABASE RESET - {message} (cache cleared)")
         return jsonify({'message': message}), 200
     else:
         logger.error(f"Admin: DATABASE RESET FAILED - {message}")
@@ -1083,17 +1261,29 @@ def metrics():
             '1h': 1,     # last 1 hour
             '24h': 24    # last 24 hours
         }
+        disconnect_ms_expr = """
+            CASE 
+                WHEN typeof(disconnect_time) IN ('integer','real') THEN CAST(disconnect_time AS INTEGER)
+                WHEN typeof(disconnect_time) = 'text' THEN
+                    CASE 
+                        WHEN instr(disconnect_time, '-') > 0 THEN CAST(strftime('%s', disconnect_time) * 1000 AS INTEGER)
+                        ELSE CAST(disconnect_time AS INTEGER)
+                    END
+                ELSE 0
+            END
+        """
         
         with sqlite_lock:
             cursor = sqlite_conn.cursor()
             
             for period_label, hours in time_periods.items():
-                cursor.execute('''
+                cutoff_ms = int((datetime.now() - timedelta(hours=hours)).timestamp() * 1000)
+                cursor.execute(f'''
                     SELECT target_name, host, COUNT(*) as disconnect_count
                     FROM disconnect_times
-                    WHERE datetime(disconnect_time) > datetime('now', '-' || ? || ' hours', 'localtime')
+                    WHERE {disconnect_ms_expr} > ?
                     GROUP BY target_name, host
-                ''', (hours,))
+                ''', (cutoff_ms,))
                 
                 rows = cursor.fetchall()
                 for row in rows:
@@ -1174,6 +1364,7 @@ def report_statistics():
         host = data['host']
         avg_response_time = data.get('avg_response_time', 0)
         last_status = data.get('last_status', 1)
+        timestamp_ms = int(time.time() * 1000)
         
         # Record ping times in milliseconds (convert from seconds)
         if avg_response_time:
@@ -1189,7 +1380,7 @@ def report_statistics():
                 INSERT INTO ping_statistics 
                 (target_name, host, total_pings, successful_pings, failed_pings, 
                  success_rate, avg_response_time, min_response_time, max_response_time, last_status, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 target_name,
                 host,
@@ -1200,7 +1391,8 @@ def report_statistics():
                 avg_response_time,
                 data.get('min_response_time'),
                 data.get('max_response_time'),
-                last_status
+                last_status,
+                timestamp_ms
             ))
             
             sqlite_conn.commit()
@@ -1243,6 +1435,8 @@ def report_disconnects():
         
         target_name = data['target_name']
         host = data['host']
+        disconnect_time_ms = normalize_timestamp_ms(data['disconnect_time'])
+        recorded_at_ms = int(time.time() * 1000)
         
         # Update in-memory metrics cache for Prometheus
         metrics_cache.increment_disconnect(target_name, host)
@@ -1253,13 +1447,14 @@ def report_disconnects():
             cursor.execute('''
                 INSERT INTO disconnect_times 
                 (target_name, host, disconnect_time, duration_seconds, reason, timestamp)
-                VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', (
                 target_name,
                 host,
-                data['disconnect_time'],
+                disconnect_time_ms,
                 data.get('duration_seconds'),
-                data.get('reason')
+                data.get('reason'),
+                recorded_at_ms
             ))
             
             sqlite_conn.commit()
@@ -1480,6 +1675,8 @@ def main():
     parser = argparse.ArgumentParser(description='PingIT Web Server')
     parser.add_argument('--test', '-t', action='store_true',
                        help='Run in test mode (reads config and db from current directory)')
+    parser.add_argument('--migrate-timestamps', action='store_true',
+                       help='Migrate timestamps from TEXT (ISO 8601) to INTEGER (Unix milliseconds), then exit')
     
     args = parser.parse_args()
     
@@ -1554,6 +1751,13 @@ def main():
         sqlite_db_path = db_path
         sqlite_conn = connect_sqlite(sqlite_db_path)
         ensure_schema(sqlite_conn)
+        
+        # Handle timestamp migration if requested
+        if args.migrate_timestamps:
+            logger.info("Timestamp migration requested via --migrate-timestamps flag")
+            migrate_timestamps_to_epoch(sqlite_conn)
+            logger.info("Migration complete. Exiting.")
+            exit(0)
         
         # Initialize admin manager with both webserver config (SSL settings) and pingit config (targets)
         init_admin_manager(sqlite_db_path, config_path, pingit_config_path, args.test)
