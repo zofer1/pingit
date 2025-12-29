@@ -11,6 +11,7 @@ import threading
 import json
 import ssl
 import os
+import sys
 import time
 import glob
 import copy
@@ -613,6 +614,403 @@ def health():
     return jsonify({'status': 'healthy', 'database': 'sqlite'}), 200
 
 
+# ADMIN ROUTES
+@app.route('/admin')
+def admin_dashboard():
+    """Admin dashboard page."""
+    return render_template('admin.html')
+
+
+# Initialize admin manager
+admin_manager = None
+
+
+def init_admin_manager(db_path: str, config_path: str, test_mode: bool = False):
+    """Initialize admin manager."""
+    global admin_manager
+    from admin import AdminManager
+    admin_manager = AdminManager(db_path, config_path, test_mode)
+
+
+# Admin API Routes
+@app.route('/api/admin/targets', methods=['GET'])
+def admin_get_targets():
+    """Get all targets."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    targets = admin_manager.get_targets()
+    return jsonify({'targets': targets}), 200
+
+
+@app.route('/api/admin/targets', methods=['POST'])
+def admin_add_target():
+    """Add a target."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    success, message = admin_manager.add_target(
+        data.get('name'),
+        data.get('host'),
+        data.get('timeout', 0.5)
+    )
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 201
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/targets/<target_name>', methods=['DELETE'])
+def admin_remove_target(target_name):
+    """Remove a target."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.remove_target(target_name)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/logs/level', methods=['PUT'])
+def admin_set_log_level():
+    """Set log level for a service."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    success, message = admin_manager.set_log_level(
+        data.get('service'),
+        data.get('level')
+    )
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/services/<service>/start', methods=['POST'])
+def admin_start_service(service):
+    """Start a service."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.start_service(service)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/services/<service>/stop', methods=['POST'])
+def admin_stop_service(service):
+    """Stop a service."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.stop_service(service)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/services/<service>/status', methods=['GET'])
+def admin_get_service_status(service):
+    """Get service status."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, status = admin_manager.get_service_status(service)
+    
+    if success:
+        return jsonify({'status': status}), 200
+    else:
+        return jsonify({'error': status.get('error', 'Unknown error')}), 400
+
+
+@app.route('/api/admin/services/<service>/restart', methods=['POST'])
+def admin_restart_service(service):
+    """Restart a service."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.restart_service(service)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/prometheus/mode', methods=['PUT'])
+def admin_prometheus_mode():
+    """Toggle prometheus mode."""
+    global prometheus_mode
+    data = request.get_json()
+    prometheus_mode = data.get('enabled', False)
+    
+    logger.info(f"Admin: Prometheus mode set to {prometheus_mode}")
+    return jsonify({'message': f"Prometheus mode {'enabled' if prometheus_mode else 'disabled'}"}), 200
+
+
+@app.route('/api/admin/ssl/mode', methods=['PUT'])
+def admin_ssl_mode():
+    """Toggle SSL mode."""
+    global config
+    data = request.get_json()
+    
+    if not config:
+        config = {}
+    if 'ssl' not in config:
+        config['ssl'] = {}
+    
+    config['ssl']['enabled'] = data.get('enabled', False)
+    logger.info(f"Admin: SSL mode set to {config['ssl']['enabled']}")
+    
+    return jsonify({'message': f"SSL mode {'enabled' if config['ssl']['enabled'] else 'disabled'} (restart required)"}), 200
+
+
+@app.route('/api/admin/database/generate-test-data', methods=['POST'])
+def admin_generate_test_data():
+    """Generate test data."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    days = data.get('days', 7)
+    
+    success, message = admin_manager.generate_test_data(days)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/database/backup', methods=['POST'])
+def admin_backup_database():
+    """Backup database."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.backup_database()
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/database/reset', methods=['POST'])
+def admin_reset_database():
+    """Reset database (requires confirmation)."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.reset_database()
+    
+    if success:
+        logger.warning(f"Admin: DATABASE RESET - {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.error(f"Admin: DATABASE RESET FAILED - {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/config/verify', methods=['POST'])
+def admin_verify_config():
+    """Verify configuration."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, config_info = admin_manager.verify_config()
+    return jsonify({'config': config_info}), 200 if success else 400
+
+
+@app.route('/api/admin/logs/location', methods=['GET'])
+def admin_get_log_location():
+    """Get current log location."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    location = admin_manager.get_log_location()
+    return jsonify({'location': location}), 200
+
+
+@app.route('/api/admin/logs/location', methods=['PUT'])
+def admin_set_log_location():
+    """Set log location."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    service = data.get('service', 'pingit')
+    path = data.get('path')
+    
+    if not path:
+        return jsonify({'error': 'Log path is required'}), 400
+    
+    success, message = admin_manager.set_log_location(service, path)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/ssl/enable', methods=['PUT'])
+def admin_enable_ssl():
+    """Enable SSL."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    cert_path = data.get('certificate')
+    key_path = data.get('private_key')
+    https_port = data.get('https_port', 7443)
+    
+    if not cert_path or not key_path:
+        return jsonify({'error': 'Certificate and private key paths are required'}), 400
+    
+    success, message = admin_manager.enable_ssl(cert_path, key_path, https_port)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/ssl/disable', methods=['PUT'])
+def admin_disable_ssl():
+    """Disable SSL."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.disable_ssl()
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/ssl/override', methods=['PUT'])
+def admin_override_ssl():
+    """Override SSL settings."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    data = request.get_json()
+    cert_path = data.get('certificate')
+    key_path = data.get('private_key')
+    https_port = data.get('https_port')
+    
+    if not cert_path or not key_path:
+        return jsonify({'error': 'Certificate and private key paths are required'}), 400
+    
+    success, message = admin_manager.override_ssl(cert_path, key_path, https_port)
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/ssl/reset', methods=['PUT'])
+def admin_reset_ssl():
+    """Reset SSL settings."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    success, message = admin_manager.reset_ssl()
+    
+    if success:
+        logger.info(f"Admin: {message}")
+        return jsonify({'message': message}), 200
+    else:
+        logger.warning(f"Admin: {message}")
+        return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/ssl/status', methods=['GET'])
+def admin_ssl_status():
+    """Get SSL status."""
+    if not admin_manager:
+        return jsonify({'error': 'Admin not initialized'}), 500
+    
+    status = admin_manager.get_ssl_status()
+    return jsonify(status), 200
+
+
+@app.route('/api/admin/webserver/reload', methods=['POST'])
+def admin_reload_webserver():
+    """Reload WebServer (graceful restart)."""
+    try:
+        logger.info("Admin: WebServer reload requested")
+        
+        # Graceful reload approach - restart process in background
+        import subprocess
+        import threading
+        
+        def reload_app():
+            time.sleep(0.5)  # Give time for response to be sent
+            logger.warning("Reloading WebServer application...")
+            
+            # Get current arguments
+            script_path = __file__
+            args = sys.argv[1:]
+            
+            # Windows or Unix approach
+            if sys.platform == 'win32':
+                # On Windows: spawn new process and exit current one
+                subprocess.Popen([sys.executable, script_path] + args)
+                # Give new process time to start
+                time.sleep(1)
+                # Exit current process
+                os._exit(0)
+            else:
+                # On Unix/Linux: use execvp for cleaner reload
+                os.execvp(sys.executable, [sys.executable, script_path] + args)
+        
+        thread = threading.Thread(target=reload_app, daemon=True)
+        thread.start()
+        return jsonify({'message': 'WebServer reloading in 0.5 seconds...'}), 200
+    except Exception as e:
+        logger.error(f"Error reloading WebServer: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/metrics')
 def metrics():
     """
@@ -935,6 +1333,7 @@ def main():
     # Determine paths and load configuration
     if args.test:
         config_path = "./webserver-config.yaml"
+        pingit_config_path = "./pingit-config.yaml"
         db_path = TEST_DB_PATH
         log_path = TEST_LOG_PATH
         log_level = "INFO"
@@ -943,6 +1342,7 @@ def main():
         port = DEFAULT_PORT
     else:
         config_path = DEFAULT_CONFIG_PATH
+        pingit_config_path = "/etc/pingit/pingit-config.yaml"
         db_path = DEFAULT_DB_PATH
         log_path = DEFAULT_LOG_PATH
         log_level = "INFO"
@@ -1001,6 +1401,9 @@ def main():
         sqlite_db_path = db_path
         sqlite_conn = connect_sqlite(sqlite_db_path)
         ensure_schema(sqlite_conn)
+        
+        # Initialize admin manager with pingit config and test mode flag
+        init_admin_manager(sqlite_db_path, pingit_config_path, args.test)
         
         # Start Flask app
         logger.info(f"Starting web server on {listen_host}:{port}")

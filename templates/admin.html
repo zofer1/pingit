@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PingIT Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 24px;
+        }
+        
+        .section {
+            background: white;
+            padding: 20px 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .row label {
+            min-width: 120px;
+            font-weight: 500;
+            color: #555;
+            font-size: 13px;
+        }
+        
+        input[type="text"],
+        input[type="number"],
+        select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            flex: 1;
+            max-width: 300px;
+        }
+        
+        .btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0052a3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #333;
+        }
+        
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+        
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        
+        th {
+            background: #f8f9fa;
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #555;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 13px;
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .action-cell {
+            display: flex;
+            gap: 5px;
+            justify-content: flex-end;
+        }
+        
+        .message {
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            display: none;
+        }
+        
+        .message.show {
+            display: block;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .toggle-switch {
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .toggle-switch input {
+            display: none;
+        }
+        
+        .toggle-slider {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+            background: #ccc;
+            border-radius: 12px;
+            margin-right: 10px;
+            transition: 0.3s;
+        }
+        
+        .toggle-switch input:checked + .toggle-slider {
+            background: #28a745;
+        }
+        
+        .toggle-slider:before {
+            content: '';
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 2px;
+            bottom: 2px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+        
+        .dialog-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .dialog-backdrop.show {
+            display: flex;
+        }
+        
+        .dialog {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+            max-width: 400px;
+            text-align: center;
+        }
+        
+        .dialog h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .dialog p {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .dialog-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div>
+                <h1>🛠️ PingIT Admin</h1>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" onclick="verifyConfig()">✓ Verify Config</button>
+                <button class="btn btn-secondary" onclick="window.location.href='/'">← Dashboard</button>
+            </div>
+        </header>
+        
+        <div id="messages"></div>
+        
+        <!-- TARGET MANAGEMENT -->
+        <div class="section">
+            <h2>🎯 Targets</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Host</th>
+                        <th>Timeout</th>
+                        <th width="100">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="targets-table">
+                    <tr><td colspan="4" class="empty-state">Loading targets...</td></tr>
+                </tbody>
+            </table>
+            <div class="row">
+                <input type="text" id="new-target-name" placeholder="Target name (e.g., google_dns)">
+                <input type="text" id="new-target-host" placeholder="Host/IP (e.g., 8.8.8.8)">
+                <input type="number" id="new-target-timeout" placeholder="Timeout (s)" min="0.1" step="0.1" value="0.5" style="max-width: 100px;">
+                <button class="btn btn-success" onclick="addNewTarget()">+ Add</button>
+            </div>
+        </div>
+        
+        <!-- LOGGING CONTROL -->
+        <div class="section">
+            <h2>📝 Logging</h2>
+            <div class="row">
+                <label>PingIT Level:</label>
+                <select id="log-level-pingit" onchange="changeLogLevel('pingit')">
+                    <option value="DEBUG">DEBUG</option>
+                    <option value="INFO" selected>INFO</option>
+                    <option value="WARNING">WARNING</option>
+                    <option value="ERROR">ERROR</option>
+                </select>
+                <input type="text" id="log-path-pingit" placeholder="Log path" style="flex: 0 0 250px;">
+                <button class="btn btn-primary btn-small" onclick="setLogLocation('pingit')">Save Path</button>
+            </div>
+        </div>
+        
+        <!-- SERVICE CONTROL -->
+        <div class="section">
+            <h2>⚙️ Services</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <label style="min-width: auto; margin: 0; font-weight: 500; color: #555; font-size: 13px;">PingIT:</label>
+                    <button class="btn btn-success btn-small" onclick="startService('pingit')">Start</button>
+                    <button class="btn btn-danger btn-small" onclick="stopService('pingit')">Stop</button>
+                    <button class="btn btn-warning btn-small" onclick="restartService('pingit')">Restart</button>
+                    <button class="btn btn-secondary btn-small" onclick="getServiceStatus('pingit')">Status</button>
+                    <span id="status-pingit" style="margin-left: 10px; font-size: 13px; color: #666;"></span>
+                </div>
+                <button class="btn btn-warning btn-small" onclick="restartService('webserver')">Restart WebServer</button>
+            </div>
+        </div>
+        
+        <!-- SSL MANAGEMENT -->
+        <div class="section">
+            <h2>🔒 SSL Configuration</h2>
+            <div class="row">
+                <label>SSL Enabled:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="ssl-enabled" onchange="toggleSSL()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <button class="btn btn-secondary btn-small" onclick="getSslStatus()">Get Status</button>
+                <button class="btn btn-warning btn-small" onclick="showResetSSLConfirm()">Reset</button>
+            </div>
+            <div class="row">
+                <label>Certificate:</label>
+                <input type="text" id="ssl-cert" placeholder="/etc/pingit/ssl/cert.pem">
+                <button class="btn btn-primary btn-small" onclick="updateSSL('cert')">Update</button>
+            </div>
+            <div class="row">
+                <label>Private Key:</label>
+                <input type="text" id="ssl-key" placeholder="/etc/pingit/ssl/key.pem">
+                <button class="btn btn-primary btn-small" onclick="updateSSL('key')">Update</button>
+            </div>
+            <div class="row">
+                <label>HTTPS Port:</label>
+                <input type="number" id="ssl-port" placeholder="7443" value="7443" style="max-width: 100px;">
+                <button class="btn btn-primary btn-small" onclick="updateSSL('port')">Update</button>
+            </div>
+        </div>
+        
+        <!-- PROMETHEUS MODE -->
+        <div class="section">
+            <h2>📡 Prometheus</h2>
+            <div class="row">
+                <label>Mode:</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="prometheus-mode" onchange="togglePrometheusMode()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span id="prometheus-status" style="color: #666; font-size: 13px;">Disabled</span>
+            </div>
+        </div>
+        
+        <!-- TEST DATA -->
+        <div class="section">
+            <h2>🧪 Test Data</h2>
+            <div class="row">
+                <label>Days:</label>
+                <input type="number" id="test-days" placeholder="7" min="1" value="7" style="max-width: 100px;">
+                <button class="btn btn-success" onclick="generateTestData()">Generate Test Data</button>
+            </div>
+        </div>
+        
+        <!-- DATABASE -->
+        <div class="section">
+            <h2>💾 Database</h2>
+            <div class="row">
+                <button class="btn btn-secondary" onclick="backupDatabase()" style="flex: 0 0 auto;">Backup</button>
+                <button class="btn btn-danger" onclick="showResetDBConfirm()" style="flex: 0 0 auto;">Reset Database</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Confirmation Dialog -->
+    <div class="dialog-backdrop" id="confirm-dialog">
+        <div class="dialog">
+            <h3 id="confirm-title">Confirm</h3>
+            <p id="confirm-message">Are you sure?</p>
+            <div class="dialog-buttons">
+                <button class="btn btn-secondary" onclick="hideConfirm()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-button" onclick="executeConfirm()">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let pendingConfirm = null;
+        
+        function showMessage(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `message ${type} show`;
+            div.textContent = msg;
+            const container = document.getElementById('messages');
+            container.appendChild(div);
+            container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => div.remove(), 5000);
+        }
+        
+        function apiCall(endpoint, method = 'GET', data = null) {
+            const opts = { method };
+            if (data) {
+                opts.headers = { 'Content-Type': 'application/json' };
+                opts.body = JSON.stringify(data);
+            }
+            return fetch(`/api/admin${endpoint}`, opts).then(r => r.json()).catch(e => ({ error: e.message }));
+        }
+        
+        function showConfirm(title, msg, callback) {
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = msg;
+            pendingConfirm = callback;
+            document.getElementById('confirm-dialog').classList.add('show');
+        }
+        
+        function hideConfirm() {
+            document.getElementById('confirm-dialog').classList.remove('show');
+            pendingConfirm = null;
+        }
+        
+        function executeConfirm() {
+            hideConfirm();
+            if (pendingConfirm) pendingConfirm();
+        }
+        
+        // TARGETS
+        async function loadTargets() {
+            const res = await apiCall('/targets');
+            const tbody = document.getElementById('targets-table');
+            
+            if (!res.targets || res.targets.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No targets configured</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = res.targets.map(t => `
+                <tr>
+                    <td><strong>${t.name}</strong></td>
+                    <td>${t.host}</td>
+                    <td>${t.timeout}s</td>
+                    <td class="action-cell">
+                        <button class="btn btn-danger btn-small" onclick="removeTarget('${t.name}')">Remove</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        async function addNewTarget() {
+            const name = document.getElementById('new-target-name').value;
+            const host = document.getElementById('new-target-host').value;
+            const timeout = parseFloat(document.getElementById('new-target-timeout').value) || 0.5;
+            
+            if (!name || !host) {
+                showMessage('Name and Host required', 'error');
+                return;
+            }
+            
+            const res = await apiCall('/targets', 'POST', { name, host, timeout });
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            } else {
+                showMessage(res.message, 'success');
+                document.getElementById('new-target-name').value = '';
+                document.getElementById('new-target-host').value = '';
+                loadTargets();
+            }
+        }
+        
+        async function removeTarget(name) {
+            const res = await apiCall(`/targets/${name}`, 'DELETE');
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            } else {
+                showMessage(res.message, 'success');
+                loadTargets();
+            }
+        }
+        
+        // LOGGING
+        async function changeLogLevel(service) {
+            const level = document.getElementById(`log-level-${service}`).value;
+            const res = await apiCall('/logs/level', 'PUT', { service, level });
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            } else {
+                showMessage(res.message, 'success');
+            }
+        }
+        
+        async function setLogLocation(service) {
+            const path = document.getElementById(`log-path-${service}`).value;
+            if (!path) {
+                showMessage('Path required', 'error');
+                return;
+            }
+            
+            const res = await apiCall('/logs/location', 'PUT', { service, path });
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            } else {
+                showMessage(res.message, 'success');
+            }
+        }
+        
+        // SERVICES
+        async function startService(service) {
+            const res = await apiCall(`/services/${service}/start`, 'POST');
+            // Only show error messages, no success popup for service activities
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            }
+            // Check status after 2 seconds
+            if (service === 'pingit') {
+                setTimeout(() => getServiceStatus(service), 2000);
+            }
+        }
+        
+        async function stopService(service) {
+            const res = await apiCall(`/services/${service}/stop`, 'POST');
+            // Only show error messages, no success popup for service activities
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            }
+            // Check status after 1.5 seconds
+            if (service === 'pingit') {
+                setTimeout(() => getServiceStatus(service), 1500);
+            }
+        }
+        
+        async function restartService(service) {
+            const res = await apiCall(`/services/${service}/restart`, 'POST');
+            // Only show error messages, no success popup for service activities
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            }
+            // Check status after 2.5 seconds for restart (takes longer)
+            if (service === 'pingit') {
+                setTimeout(() => getServiceStatus(service), 2500);
+            }
+        }
+        
+        async function getServiceStatus(service) {
+            const res = await apiCall(`/services/${service}/status`);
+            const statusSpan = document.getElementById(`status-${service}`);
+            
+            if (res.status) {
+                const msg = res.status.message || `${service}: ${res.status.status}`;
+                const indicator = res.status.is_running ? '🟢 running' : '🔴 stopped';
+                statusSpan.textContent = indicator;
+                statusSpan.style.color = res.status.is_running ? '#28a745' : '#dc3545';
+            } else {
+                statusSpan.textContent = '❓ unknown';
+                statusSpan.style.color = '#999';
+            }
+        }
+        
+        // SSL
+        async function toggleSSL() {
+            const enabled = document.getElementById('ssl-enabled').checked;
+            const res = await apiCall(enabled ? '/ssl/enable' : '/ssl/disable', 'PUT', { 
+                certificate: document.getElementById('ssl-cert').value,
+                private_key: document.getElementById('ssl-key').value
+            });
+            showMessage(res.message || res.error, res.error ? 'error' : 'success');
+        }
+        
+        async function getSslStatus() {
+            const res = await apiCall('/ssl/status');
+            if (res.error) {
+                showMessage(`Error: ${res.error}`, 'error');
+            } else {
+                document.getElementById('ssl-enabled').checked = res.enabled || false;
+                document.getElementById('ssl-cert').value = res.certificate || '';
+                document.getElementById('ssl-key').value = res.private_key || '';
+                document.getElementById('ssl-port').value = res.https_port || 7443;
+                showMessage('SSL status loaded', 'success');
+            }
+        }
+        
+        async function updateSSL(field) {
+            const cert = document.getElementById('ssl-cert').value;
+            const key = document.getElementById('ssl-key').value;
+            const port = parseInt(document.getElementById('ssl-port').value) || 7443;
+            
+            if (!cert || !key) {
+                showMessage('Certificate and key required', 'error');
+                return;
+            }
+            
+            const res = await apiCall('/ssl/override', 'PUT', { 
+                certificate: cert, 
+                private_key: key, 
+                https_port: port 
+            });
+            showMessage(res.message || res.error, res.error ? 'error' : 'success');
+        }
+        
+        function showResetSSLConfirm() {
+            showConfirm('Reset SSL', 'This will clear all SSL settings. Continue?', () => {
+                apiCall('/ssl/reset', 'PUT').then(res => {
+                    showMessage(res.message || res.error, res.error ? 'error' : 'success');
+                    if (!res.error) {
+                        document.getElementById('ssl-cert').value = '';
+                        document.getElementById('ssl-key').value = '';
+                        document.getElementById('ssl-enabled').checked = false;
+                    }
+                });
+            });
+        }
+        
+        // PROMETHEUS
+        async function togglePrometheusMode() {
+            const enabled = document.getElementById('prometheus-mode').checked;
+            const res = await apiCall('/prometheus/mode', 'PUT', { enabled });
+            document.getElementById('prometheus-status').textContent = enabled ? 'Enabled' : 'Disabled';
+            showMessage(res.message || res.error, res.error ? 'error' : 'success');
+        }
+        
+        // TEST DATA
+        async function generateTestData() {
+            const days = parseInt(document.getElementById('test-days').value) || 7;
+            const res = await apiCall('/database/generate-test-data', 'POST', { days });
+            showMessage(res.message || res.error, res.error ? 'error' : 'success');
+        }
+        
+        // DATABASE
+        async function backupDatabase() {
+            const res = await apiCall('/database/backup', 'POST');
+            showMessage(res.message || res.error, res.error ? 'error' : 'success');
+        }
+        
+        function showResetDBConfirm() {
+            showConfirm('Reset Database', 'Delete all ping data and disconnect records?', () => {
+                apiCall('/database/reset', 'POST').then(res => {
+                    showMessage(res.message || res.error, res.error ? 'error' : 'success');
+                });
+            });
+        }
+        
+        // CONFIG
+        async function verifyConfig() {
+            const res = await apiCall('/config/verify', 'POST');
+            if (res.config && res.config.valid) {
+                showMessage(`✓ Config valid: ${res.config.targets_count} targets`, 'success');
+            } else {
+                const issues = res.config?.issues?.join(', ') || 'Unknown error';
+                showMessage(`✗ Issues: ${issues}`, 'error');
+            }
+        }
+        
+        // INIT
+        loadTargets();
+        getSslStatus();
+    </script>
+</body>
+</html>
